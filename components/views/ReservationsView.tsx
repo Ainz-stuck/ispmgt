@@ -325,7 +325,7 @@ export function ReservationsView() {
                         {/* Resources */}
                         <td className="px-4 py-4">
                           {res.resources.length > 0 ? (
-                            <div className="flex flex-wrap gap-1 max-w-[150px]">
+                            <div className="flex flex-wrap gap-1 max-w-xs">
                               {res.resources.map((item) => (
                                 <span
                                   key={item.resourceId}

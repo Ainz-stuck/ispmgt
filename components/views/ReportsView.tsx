@@ -133,9 +133,9 @@ export function ReportsView() {
       </div>
 
       {/* Facility Utilization Ranking & Breakdown */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-3 2xl:grid-cols-4 gap-6">
         {/* Left 2 Cols: Facility Usage Frequency */}
-        <div className="lg:col-span-2">
+        <div className="lg:col-span-2 2xl:col-span-3">
           <Card>
             <CardHeader>
               <div>

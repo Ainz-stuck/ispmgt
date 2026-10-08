@@ -97,20 +97,20 @@ export function RegisterPage() {
   };
 
   return (
-    <div className="min-h-screen flex flex-col justify-center items-center p-4 sm:p-8 bg-[#FAFAFB] dark:bg-[#09090B] font-sans relative">
+    <div className="min-h-screen flex flex-col justify-center items-center p-3 sm:p-8 bg-[#FAFAFB] dark:bg-[#09090B] font-sans relative py-12 sm:py-16">
       {/* Return to Landing link */}
       <button
         type="button"
         onClick={() => setAuthView("landing")}
-        className="absolute top-6 left-6 flex items-center gap-2 text-xs font-semibold text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100 transition-colors py-2 px-3 rounded-full hover:bg-black/5 dark:hover:bg-white/5"
+        className="absolute top-4 sm:top-6 left-4 sm:left-6 flex items-center gap-2 text-xs font-semibold text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100 transition-colors py-2 px-3 rounded-full hover:bg-black/5 dark:hover:bg-white/5"
       >
         <ArrowLeft size={16} weight="bold" />
         <span>Return to Landing</span>
       </button>
 
       {/* Double-Bezel Hardware Auth Enclosure */}
-      <div className="w-full max-w-xl p-1.5 rounded-[2.25rem] bg-zinc-200/60 dark:bg-zinc-800/50 ring-1 ring-black/[0.05] dark:ring-white/[0.08] shadow-2xl transition-all duration-500 ease-[cubic-bezier(0.32,0.72,0,1)] my-10">
-        <div className="w-full rounded-[calc(2.25rem-0.375rem)] bg-white dark:bg-zinc-900 border border-black/[0.03] dark:border-white/[0.05] shadow-[inset_0_1px_1px_rgba(255,255,255,0.9)] dark:shadow-[inset_0_1px_1px_rgba(255,255,255,0.06)] p-7 sm:p-9 space-y-6">
+      <div className="w-full max-w-xl p-1 sm:p-1.5 rounded-[2rem] sm:rounded-[2.25rem] bg-zinc-200/60 dark:bg-zinc-800/50 ring-1 ring-black/[0.05] dark:ring-white/[0.08] shadow-2xl transition-all duration-500 ease-[cubic-bezier(0.32,0.72,0,1)] my-6 sm:my-10">
+        <div className="w-full rounded-[calc(2rem-0.25rem)] sm:rounded-[calc(2.25rem-0.375rem)] bg-white dark:bg-zinc-900 border border-black/[0.03] dark:border-white/[0.05] shadow-[inset_0_1px_1px_rgba(255,255,255,0.9)] dark:shadow-[inset_0_1px_1px_rgba(255,255,255,0.06)] p-5 sm:p-9 space-y-5 sm:space-y-6">
           
           {/* Header */}
           <div className="text-center space-y-3">

@@ -150,3 +150,45 @@ body {
 .dark :focus-visible {
   outline-color: #34d399;
 }
+
+/* Mobile Ergonomics & Safe-Area Insets */
+.pb-safe {
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+.pt-safe {
+  padding-top: env(safe-area-inset-top, 0px);
+}
+.mb-safe {
+  margin-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+/* Touch manipulation & instant tap responsiveness */
+button,
+a,
+input,
+select,
+textarea,
+[role="button"] {
+  touch-action: manipulation;
+}
+
+.min-touch-target {
+  min-height: 44px;
+  min-width: 44px;
+}
+
+/* Bottom Sheet Entrance Animation for Mobile */
+@keyframes slideUpSheet {
+  from {
+    transform: translateY(100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+.animate-sheet-up {
+  animation: slideUpSheet 0.28s cubic-bezier(0.32, 0.72, 0, 1) forwards;
+}

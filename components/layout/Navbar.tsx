@@ -24,6 +24,7 @@ import {
   CaretLeft,
   CaretRight,
   SlidersHorizontal,
+  House,
 } from "@phosphor-icons/react";
 import { RoleBadge } from "../ui/Badge";
 import { Button } from "../ui/Button";
@@ -712,6 +713,96 @@ export function Navbar({ isTabletCollapsed = true, onToggleTabletCollapse }: Nav
           </div>
         </div>
       )}
+
+      {/* ========================================================================= */}
+      {/* 5. NATIVE APP-STYLE MOBILE BOTTOM NAVIGATION BAR (< 768px)                */}
+      {/* 5 primary thumb targets with safe-area padding and quick-booking button   */}
+      {/* ========================================================================= */}
+      <nav
+        aria-label="Mobile Navigation Bar"
+        className="md:hidden fixed bottom-0 inset-x-0 z-40 bg-white/95 dark:bg-zinc-950/95 backdrop-blur-md border-t border-zinc-200/90 dark:border-zinc-800 pb-[env(safe-area-inset-bottom,0px)] shadow-[0_-4px_20px_rgba(0,0,0,0.06)]"
+      >
+        <div className="h-16 px-1.5 flex items-center justify-around">
+          {/* 1. Home / Dashboard */}
+          <button
+            type="button"
+            onClick={() => handleNavClick("dashboard")}
+            className={`flex flex-col items-center justify-center flex-1 py-1 min-h-[48px] rounded-xl transition-colors ${
+              activeTab === "dashboard"
+                ? "text-[#0F5132] dark:text-emerald-400 font-bold"
+                : "text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-300"
+            }`}
+            aria-label="Dashboard"
+            aria-current={activeTab === "dashboard" ? "page" : undefined}
+          >
+            <House size={22} weight={activeTab === "dashboard" ? "fill" : "regular"} />
+            <span className="text-[10px] mt-0.5 tracking-tight font-medium">Home</span>
+          </button>
+
+          {/* 2. Venues / Facilities */}
+          <button
+            type="button"
+            onClick={() => handleNavClick("facilities")}
+            className={`flex flex-col items-center justify-center flex-1 py-1 min-h-[48px] rounded-xl transition-colors ${
+              activeTab === "facilities"
+                ? "text-[#0F5132] dark:text-emerald-400 font-bold"
+                : "text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-300"
+            }`}
+            aria-label="Facilities"
+            aria-current={activeTab === "facilities" ? "page" : undefined}
+          >
+            <Buildings size={22} weight={activeTab === "facilities" ? "fill" : "regular"} />
+            <span className="text-[10px] mt-0.5 tracking-tight font-medium">Venues</span>
+          </button>
+
+          {/* 3. Center Elevated CTA: Reserve Venue */}
+          <button
+            type="button"
+            onClick={() => openBookingModal()}
+            className="flex flex-col items-center justify-center -mt-5 mx-0.5 group focus:outline-none"
+            aria-label="Reserve Venue"
+          >
+            <div className="w-12 h-12 rounded-full bg-[#0F5132] group-hover:bg-[#0A3622] text-white flex items-center justify-center shadow-lg ring-4 ring-white dark:ring-zinc-950 active:scale-95 transition-all">
+              <PlusCircle size={26} weight="bold" />
+            </div>
+            <span className="text-[10px] font-bold text-[#0F5132] dark:text-emerald-400 mt-0.5">Book</span>
+          </button>
+
+          {/* 4. Calendar */}
+          <button
+            type="button"
+            onClick={() => handleNavClick("calendar")}
+            className={`flex flex-col items-center justify-center flex-1 py-1 min-h-[48px] rounded-xl transition-colors ${
+              activeTab === "calendar"
+                ? "text-[#0F5132] dark:text-emerald-400 font-bold"
+                : "text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-300"
+            }`}
+            aria-label="Calendar"
+            aria-current={activeTab === "calendar" ? "page" : undefined}
+          >
+            <Calendar size={22} weight={activeTab === "calendar" ? "fill" : "regular"} />
+            <span className="text-[10px] mt-0.5 tracking-tight font-medium">Schedule</span>
+          </button>
+
+          {/* 5. More Menu (Drawer Trigger) */}
+          <button
+            type="button"
+            onClick={() => setIsMobileDrawerOpen(true)}
+            className={`relative flex flex-col items-center justify-center flex-1 py-1 min-h-[48px] rounded-xl transition-colors ${
+              isMobileDrawerOpen || activeTab === "reservations" || activeTab === "resources" || activeTab === "reports" || activeTab === "users" || activeTab === "profile" || activeTab === "notifications" || activeTab === "architecture"
+                ? "text-[#0F5132] dark:text-emerald-400 font-bold"
+                : "text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-300"
+            }`}
+            aria-label="Open Full Navigation Menu"
+          >
+            <List size={22} weight="bold" />
+            <span className="text-[10px] mt-0.5 tracking-tight font-medium">Menu</span>
+            {unreadNotificationsCount > 0 && (
+              <span className="absolute top-1 right-3 w-2.5 h-2.5 bg-rose-600 rounded-full ring-2 ring-white dark:ring-zinc-950" />
+            )}
+          </button>
+        </div>
+      </nav>
     </>
   );
 }

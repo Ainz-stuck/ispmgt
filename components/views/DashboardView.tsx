@@ -64,10 +64,10 @@ export function DashboardView() {
   );
 
   return (
-    <div className="space-y-10 pb-16">
+    <div className="space-y-8 sm:space-y-10 pb-16">
       {/* ATTENTION / HERO BANNER (Double-Bezel Hardware Architecture) */}
-      <div className="p-1.5 rounded-[2.5rem] bg-zinc-200/50 dark:bg-zinc-800/40 ring-1 ring-black/[0.05] dark:ring-white/[0.08] shadow-2xl">
-        <section className="relative rounded-[calc(2.5rem-0.375rem)] overflow-hidden bg-zinc-950 text-white min-h-[420px] flex flex-col justify-between p-6 sm:p-10 lg:p-12 border border-white/[0.06] shadow-[inset_0_1px_1px_rgba(255,255,255,0.15)]">
+      <div className="p-1 sm:p-1.5 rounded-[2rem] sm:rounded-[2.5rem] bg-zinc-200/50 dark:bg-zinc-800/40 ring-1 ring-black/[0.05] dark:ring-white/[0.08] shadow-xl sm:shadow-2xl">
+        <section className="relative rounded-[calc(2rem-0.25rem)] sm:rounded-[calc(2.5rem-0.375rem)] overflow-hidden bg-zinc-950 text-white min-h-[380px] sm:min-h-[420px] flex flex-col justify-between p-4 sm:p-8 lg:p-12 border border-white/[0.06] shadow-[inset_0_1px_1px_rgba(255,255,255,0.15)]">
           <Image
             src="/images/campus_hero.jpg"
             alt="University Campus Architecture"
@@ -78,10 +78,10 @@ export function DashboardView() {
           <div className="absolute inset-0 bg-gradient-to-r from-black/95 via-black/70 to-transparent pointer-events-none" />
 
           {/* Top Tag & Role Identification */}
-          <div className="relative z-10 flex flex-wrap items-center justify-between gap-4">
-            <div className="inline-flex items-center gap-2 rounded-full px-3.5 py-1 text-[10px] uppercase tracking-[0.2em] font-semibold bg-white/10 backdrop-blur-xl border border-white/20 text-emerald-300">
+          <div className="relative z-10 flex flex-wrap items-center justify-between gap-2.5 sm:gap-4">
+            <div className="inline-flex items-center gap-1.5 sm:gap-2 rounded-full px-3 py-1 text-[9px] sm:text-[10px] uppercase tracking-[0.15em] sm:tracking-[0.2em] font-semibold bg-white/10 backdrop-blur-xl border border-white/20 text-emerald-300">
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" />
-              <span>
+              <span className="truncate max-w-[200px] sm:max-w-none">
                 {isStudent
                   ? "Student Facility & Event Portal"
                   : isFaculty
@@ -89,20 +89,20 @@ export function DashboardView() {
                   : "Central Operations Command Console"}
               </span>
             </div>
-            <div className="flex items-center gap-2 text-xs text-zinc-300">
-              <span>Logged in as {currentUser.name}</span>
+            <div className="flex items-center gap-2 text-xs text-zinc-300 ml-auto sm:ml-0">
+              <span className="hidden sm:inline">Logged in as {currentUser.name}</span>
               <RoleBadge role={currentUser.role} />
             </div>
           </div>
 
           {/* Wide Editorial H1 & Value Proposition */}
-          <div className="relative z-10 my-auto py-6 max-w-4xl space-y-4">
-            <h1 className="text-3xl sm:text-4xl md:text-5xl font-bold tracking-tight text-white leading-tight font-sans">
-              {isStudent && "UniSpace: A Web-Based University Facility Booking and Resource Scheduling System"}
+          <div className="relative z-10 my-auto py-4 sm:py-6 max-w-4xl space-y-3 sm:space-y-4">
+            <h1 className="text-2xl sm:text-4xl md:text-5xl font-bold tracking-tight text-white leading-tight font-sans">
+              {isStudent && "UniSpace: University Facility Booking & Resource Scheduling"}
               {isFaculty && "Faculty Academic Venues & Research Resource Booking"}
               {isAdmin && "Central University Facility Operations & Governance"}
             </h1>
-            <p className="text-sm sm:text-base text-zinc-300 max-w-2xl leading-relaxed font-normal">
+            <p className="text-xs sm:text-sm md:text-base text-zinc-300 max-w-2xl leading-relaxed font-normal">
               {isStudent &&
                 "Book auditoriums, dance studios, and athletics spaces for collegiate organizations with instant schedule collision checking."}
               {isFaculty &&
@@ -111,13 +111,13 @@ export function DashboardView() {
                 "Monitor campus venue occupancy, adjudicate pending reservation requests, audit equipment stock, and manage user access."}
             </p>
 
-            <div className="pt-2 flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
+            <div className="pt-2 flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5 sm:gap-3">
               <Button
                 size="md"
                 pill
                 onClick={() => openBookingModal()}
                 trailingIcon={<PlusCircle size={17} weight="bold" />}
-                className="bg-emerald-600 hover:bg-emerald-500 text-white border-none shadow-xl px-6 min-h-[44px] w-full sm:w-auto"
+                className="bg-emerald-600 hover:bg-emerald-500 text-white border-none shadow-xl px-5 sm:px-6 min-h-[44px] w-full sm:w-auto"
               >
                 {isAdmin ? "Create Institutional Booking" : "Start New Reservation"}
               </Button>
@@ -127,7 +127,7 @@ export function DashboardView() {
                 pill
                 onClick={() => setActiveTab("calendar")}
                 trailingIcon={<Calendar size={17} weight="bold" />}
-                className="bg-white/10 text-white border-white/20 hover:bg-white/20 backdrop-blur-xl px-6 min-h-[44px] w-full sm:w-auto"
+                className="bg-white/10 text-white border-white/20 hover:bg-white/20 backdrop-blur-xl px-5 sm:px-6 min-h-[44px] w-full sm:w-auto"
               >
                 Master Calendar
               </Button>
@@ -138,7 +138,7 @@ export function DashboardView() {
                   pill
                   onClick={() => setActiveTab("users")}
                   trailingIcon={<UserGear size={17} weight="bold" />}
-                  className="bg-white/10 text-white border-white/20 hover:bg-white/20 backdrop-blur-xl px-6 min-h-[44px] w-full sm:w-auto"
+                  className="bg-white/10 text-white border-white/20 hover:bg-white/20 backdrop-blur-xl px-5 sm:px-6 min-h-[44px] w-full sm:w-auto"
                 >
                   Manage Users
                 </Button>
@@ -147,7 +147,7 @@ export function DashboardView() {
           </div>
 
           {/* Facility Search Bar */}
-          <div className="relative z-10 flex flex-col sm:flex-row items-center gap-3 pt-5 border-t border-white/10">
+          <div className="relative z-10 flex flex-col sm:flex-row items-stretch sm:items-center gap-3 pt-4 sm:pt-5 border-t border-white/10">
             <div className="relative w-full sm:max-w-md">
               <MagnifyingGlass
                 size={18}
@@ -159,10 +159,10 @@ export function DashboardView() {
                 aria-label="Search facilities by venue name, location, or building"
                 value={searchFilter}
                 onChange={(e) => setSearchFilter(e.target.value)}
-                className="w-full h-10 pl-10 pr-4 text-xs rounded-full bg-black/40 border border-white/20 text-white placeholder:text-zinc-400 focus:outline-none focus:ring-2 focus:ring-emerald-500 backdrop-blur-md"
+                className="w-full h-11 sm:h-10 pl-10 pr-4 text-xs rounded-full bg-black/40 border border-white/20 text-white placeholder:text-zinc-400 focus:outline-none focus:ring-2 focus:ring-emerald-500 backdrop-blur-md"
               />
             </div>
-            <div className="text-xs text-zinc-400 sm:ml-auto flex items-center gap-4">
+            <div className="text-xs text-zinc-400 sm:ml-auto flex items-center justify-between sm:justify-end gap-3 sm:gap-4">
               <span>6 Certified Venues</span>
               <span>·</span>
               <span className="text-emerald-400 font-medium">
@@ -175,7 +175,7 @@ export function DashboardView() {
 
       {/* ROLE-CUSTOMIZED KPI METRICS (Double-Bezel Hardware Grid) */}
       {/* Desktop: 4 in a row | Tablet: 2 per row | Mobile: 1 per row */}
-      <section className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
+      <section className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3.5 sm:gap-4">
         {/* Metric 1 */}
         <div className="p-1.5 rounded-[2rem] bg-zinc-200/60 dark:bg-zinc-800/50 ring-1 ring-black/[0.05] dark:ring-white/[0.08] shadow-sm hover:shadow-xl transition-all duration-300 hover:-translate-y-0.5">
           <div className="h-full rounded-[calc(2rem-0.375rem)] bg-white dark:bg-zinc-900 p-5 sm:p-6 border border-black/[0.03] dark:border-white/[0.05] shadow-[inset_0_1px_1px_rgba(255,255,255,0.9)] dark:shadow-[inset_0_1px_1px_rgba(255,255,255,0.06)] flex flex-col justify-between">
@@ -290,7 +290,7 @@ export function DashboardView() {
           </Button>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 grid-flow-dense">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4 gap-4 sm:gap-6 grid-flow-dense">
           {filteredFacilities.map((facility) => (
             <FacilityCard
               key={facility.id}
@@ -303,8 +303,8 @@ export function DashboardView() {
       </section>
 
       {/* RECENT BOOKINGS & CAMPUS RESOURCE STATUS */}
-      <section className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div className="lg:col-span-2">
+      <section className="grid grid-cols-1 lg:grid-cols-3 2xl:grid-cols-4 gap-6">
+        <div className="lg:col-span-2 2xl:col-span-3">
           <Card>
             <CardHeader>
               <div>

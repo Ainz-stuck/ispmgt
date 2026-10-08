@@ -80,7 +80,7 @@ function MainAppShell() {
         <main
           id="main-content"
           tabIndex={-1}
-          className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 pt-6 sm:pt-8 focus:outline-none"
+          className="flex-1 max-w-7xl 2xl:max-w-[1600px] w-full mx-auto px-3.5 sm:px-6 lg:px-8 2xl:px-12 pt-4 sm:pt-6 lg:pt-8 pb-24 md:pb-8 focus:outline-none"
         >
           {activeTab === "dashboard" && <DashboardView />}
           {activeTab === "facilities" && <FacilitiesView />}

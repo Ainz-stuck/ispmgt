@@ -45,20 +45,20 @@ export function LandingPage() {
       </div>
 
       {/* Floating Island Navigation Bar */}
-      <div className="sticky top-4 z-40 px-4 sm:px-6 w-full max-w-7xl mx-auto">
-        <header className="rounded-full bg-white/80 dark:bg-zinc-900/80 backdrop-blur-2xl ring-1 ring-black/[0.06] dark:ring-white/[0.08] shadow-[0_16px_32px_-8px_rgba(0,0,0,0.08)] px-5 sm:px-7 h-16 flex items-center justify-between transition-all duration-300">
+      <div className="sticky top-4 z-40 px-3 sm:px-6 w-full max-w-7xl 2xl:max-w-[1600px] mx-auto">
+        <header className="rounded-full bg-white/80 dark:bg-zinc-900/80 backdrop-blur-2xl ring-1 ring-black/[0.06] dark:ring-white/[0.08] shadow-[0_16px_32px_-8px_rgba(0,0,0,0.08)] px-3 sm:px-7 h-16 flex items-center justify-between transition-all duration-300">
           {/* Logo & Identity */}
-          <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-full bg-[#0F5132] flex items-center justify-center text-white shadow-sm ring-2 ring-emerald-600/30">
+          <div className="flex items-center gap-2 sm:gap-3">
+            <div className="w-9 h-9 rounded-full bg-[#0F5132] flex items-center justify-center text-white shadow-sm ring-2 ring-emerald-600/30 shrink-0">
               <Buildings size={20} weight="bold" />
             </div>
             <div>
-              <div className="flex items-center gap-2">
-                <span className="text-lg font-bold tracking-tight text-zinc-900 dark:text-zinc-50">
+              <div className="flex items-center gap-1.5 sm:gap-2">
+                <span className="text-base sm:text-lg font-bold tracking-tight text-zinc-900 dark:text-zinc-50 font-sans">
                   UniSpace
                 </span>
-                <span className="text-[9px] font-mono uppercase px-2 py-0.5 rounded-full bg-emerald-50 text-[#0F5132] dark:bg-emerald-950 dark:text-emerald-300 ring-1 ring-emerald-500/20 font-semibold tracking-wider">
-                  Verified
+                <span className="text-[9px] font-mono uppercase px-1.5 sm:px-2 py-0.5 rounded-full bg-emerald-50 text-[#0F5132] dark:bg-emerald-950 dark:text-emerald-300 ring-1 ring-emerald-500/20 font-semibold tracking-wider">
+                  v2.6
                 </span>
               </div>
             </div>
@@ -78,7 +78,7 @@ export function LandingPage() {
           </div>
 
           {/* Auth Actions with Pill Architecture */}
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5 sm:gap-2">
             <Button
               variant="ghost"
               size="sm"
@@ -94,19 +94,19 @@ export function LandingPage() {
               pill
               onClick={() => setAuthView("register")}
               trailingIcon={<UserPlus size={13} weight="bold" />}
-              className="text-xs shadow-md min-h-[44px] px-3.5 sm:px-4"
+              className="text-xs shadow-md min-h-[44px] px-3 sm:px-4"
             >
-              Create Account
+              <span className="hidden sm:inline">Create </span>Account
             </Button>
           </div>
         </header>
       </div>
 
       {/* HERO SECTION WITH MACRO-WHITESPACE & CINEMATIC DEPTH */}
-      <section className="relative overflow-hidden pt-12 pb-24 sm:pt-20 sm:pb-36 px-4 sm:px-6 lg:px-8 max-w-7xl mx-auto w-full">
+      <section className="relative overflow-hidden pt-8 pb-16 sm:pt-20 sm:pb-36 px-3.5 sm:px-6 lg:px-8 max-w-7xl 2xl:max-w-[1600px] mx-auto w-full">
         {/* Double-Bezel Hero Showcase Shell */}
-        <div className="relative rounded-[2.5rem] p-2 bg-zinc-200/50 dark:bg-zinc-800/40 ring-1 ring-black/[0.05] dark:ring-white/[0.08] shadow-2xl">
-          <div className="relative rounded-[calc(2.5rem-0.5rem)] overflow-hidden bg-zinc-950 text-white min-h-[580px] sm:min-h-[640px] flex flex-col justify-between p-6 sm:p-14 lg:p-16 border border-white/[0.06] shadow-[inset_0_1px_1px_rgba(255,255,255,0.15)]">
+        <div className="relative rounded-[2rem] sm:rounded-[2.5rem] p-1.5 sm:p-2 bg-zinc-200/50 dark:bg-zinc-800/40 ring-1 ring-black/[0.05] dark:ring-white/[0.08] shadow-2xl">
+          <div className="relative rounded-[calc(2rem-0.375rem)] sm:rounded-[calc(2.5rem-0.5rem)] overflow-hidden bg-zinc-950 text-white min-h-[500px] sm:min-h-[640px] flex flex-col justify-between p-5 sm:p-14 lg:p-16 border border-white/[0.06] shadow-[inset_0_1px_1px_rgba(255,255,255,0.15)]">
             
             {/* Background Architectural Canvas */}
             <Image

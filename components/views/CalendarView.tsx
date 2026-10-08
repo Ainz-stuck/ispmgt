@@ -781,7 +781,7 @@ export function CalendarView() {
                         return (
                           <div
                             key={`pad-${idx}`}
-                            className="p-2 min-h-[68px] lg:min-h-[82px] rounded-xl bg-zinc-50/40 dark:bg-zinc-900/40 text-zinc-300 dark:text-zinc-700 text-xs text-right opacity-30 select-none"
+                            className="p-1 sm:p-2 min-h-[48px] sm:min-h-[68px] lg:min-h-[82px] rounded-xl bg-zinc-50/40 dark:bg-zinc-900/40 text-zinc-300 dark:text-zinc-700 text-xs text-right opacity-30 select-none"
                           >
                             {cell.dayNum}
                           </div>
@@ -805,7 +805,7 @@ export function CalendarView() {
                               setSelectedDate(cell.dateStr);
                             }
                           }}
-                          className={`p-1.5 lg:p-2 min-h-[68px] lg:min-h-[82px] rounded-xl border text-xs cursor-pointer transition-all flex flex-col justify-between focus:outline-none focus-visible:ring-2 focus-visible:ring-[#0F5132] ${
+                          className={`p-1 sm:p-1.5 lg:p-2 min-h-[50px] sm:min-h-[68px] lg:min-h-[82px] rounded-xl border text-xs cursor-pointer transition-all flex flex-col justify-between focus:outline-none focus-visible:ring-2 focus-visible:ring-[#0F5132] ${
                             isSelected
                               ? "border-[#0F5132] bg-emerald-50/70 dark:bg-emerald-950/40 ring-2 ring-[#0F5132]/40 shadow-sm"
                               : count > 0
@@ -830,8 +830,25 @@ export function CalendarView() {
                             )}
                           </div>
 
-                          {/* Event Snippets */}
-                          <div className="space-y-1 my-1">
+                          {/* Mobile: Compact Event Dots */}
+                          <div className="flex sm:hidden items-center justify-center gap-0.5 mt-0.5 flex-wrap">
+                            {cell.reservations.slice(0, 3).map((r) => {
+                              const theme = VENUE_THEMES[r.facilityId] || VENUE_THEMES["function-hall"];
+                              return (
+                                <span
+                                  key={r.id}
+                                  className={`w-1.5 h-1.5 rounded-full ${theme.dot}`}
+                                  title={`${r.facilityName}: ${r.eventName}`}
+                                />
+                              );
+                            })}
+                            {count > 3 && (
+                              <span className="text-[8px] text-zinc-400 font-mono">+</span>
+                            )}
+                          </div>
+
+                          {/* Desktop & Tablet: Rich Event Snippet Badges */}
+                          <div className="hidden sm:block space-y-1 my-1">
                             {cell.reservations.slice(0, 2).map((r) => {
                               const theme = VENUE_THEMES[r.facilityId] || VENUE_THEMES["function-hall"];
                               return (
@@ -966,8 +983,87 @@ export function CalendarView() {
               </span>
             </CardHeader>
 
-            <CardBody className="p-0 overflow-x-auto">
-              <div className="min-w-[850px]">
+            <CardBody className="p-0">
+              {/* Mobile Day-By-Day Timetable (< 768px) */}
+              <div className="block md:hidden">
+                {/* Day Pill Selector */}
+                <div className="p-2 border-b border-zinc-200 dark:border-zinc-800 flex items-center gap-1.5 overflow-x-auto no-scrollbar bg-zinc-50 dark:bg-zinc-800/40">
+                  {weekDays.map((d) => {
+                    const isSelected = selectedDate === d.dateStr;
+                    return (
+                      <button
+                        key={d.dateStr}
+                        type="button"
+                        onClick={() => setSelectedDate(d.dateStr)}
+                        className={`px-3 py-2 rounded-xl text-center shrink-0 min-w-[64px] min-h-[48px] transition-all ${
+                          isSelected
+                            ? "bg-[#0F5132] text-white shadow-xs font-bold"
+                            : "bg-white dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 border border-zinc-200 dark:border-zinc-700"
+                        }`}
+                      >
+                        <div className="text-[10px] uppercase opacity-75">{d.dayName}</div>
+                        <div className="text-sm font-bold">{d.dayNum}</div>
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {/* Selected Day Vertical Hourly Timeline */}
+                <div className="p-3 divide-y divide-zinc-100 dark:divide-zinc-800">
+                  {OPERATING_HOURS.map((hour) => {
+                    const hourInt = parseInt(hour.split(":")[0]);
+                    const currentDay = weekDays.find((d) => d.dateStr === selectedDate) || weekDays[0];
+                    const eventInHour = currentDay.reservations.find((r) => {
+                      const startH = parseInt(r.startTime.split(":")[0]);
+                      const endH = parseInt(r.endTime.split(":")[0]);
+                      return hourInt >= startH && hourInt < endH;
+                    });
+
+                    return (
+                      <div key={hour} className="py-2.5 flex items-start gap-3">
+                        <span className="font-mono text-xs text-zinc-400 w-12 pt-1 shrink-0">{hour}</span>
+                        <div className="flex-1 min-w-0">
+                          {eventInHour ? (
+                            <div
+                              onClick={() => setSelectedReservationForReview(eventInHour)}
+                              className={`p-3 rounded-xl border cursor-pointer ${
+                                VENUE_THEMES[eventInHour.facilityId]?.bg || "bg-emerald-50"
+                              } ${VENUE_THEMES[eventInHour.facilityId]?.border || "border-emerald-300"} space-y-1`}
+                            >
+                              <div className="flex items-center justify-between gap-1">
+                                <span className="font-bold text-xs truncate">{eventInHour.eventName}</span>
+                                <StatusBadge status={eventInHour.status} />
+                              </div>
+                              <div className="text-[11px] text-zinc-500 truncate">
+                                {eventInHour.facilityName} · {eventInHour.startTime} - {eventInHour.endTime}
+                              </div>
+                            </div>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const targetFacility =
+                                  selectedFacilityFilter !== "ALL"
+                                    ? (selectedFacilityFilter as FacilityId)
+                                    : "function-hall";
+                                openBookingModal(targetFacility, currentDay.dateStr, hour);
+                              }}
+                              className="w-full py-2 px-3 rounded-xl border border-dashed border-zinc-200 dark:border-zinc-700 hover:border-emerald-500 text-left text-xs text-zinc-400 hover:text-[#0F5132] transition-colors flex items-center justify-between min-h-[44px]"
+                            >
+                              <span>Available</span>
+                              <span className="text-[11px] font-semibold text-[#0F5132] dark:text-emerald-400">+ Book</span>
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Desktop & Tablet Timetable Matrix (hidden md:block) */}
+              <div className="hidden md:block overflow-x-auto">
+                <div className="min-w-[850px]">
                 {/* 7-Day Header */}
                 <div className="grid grid-cols-8 border-b border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-800/60 text-xs font-semibold">
                   <div className="p-3 text-center text-zinc-400 uppercase text-[10px] tracking-wider border-r border-zinc-200 dark:border-zinc-800">
@@ -1085,6 +1181,7 @@ export function CalendarView() {
                   })}
                 </div>
               </div>
+            </div>
             </CardBody>
           </Card>
         )}
