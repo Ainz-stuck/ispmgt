@@ -1,69 +1,123 @@
-import Image from "next/image";
+"use client";
+
+import React from "react";
+import { AppProvider, useApp } from "../context/AppContext";
+import { Navbar } from "../components/layout/Navbar";
+import { Footer } from "../components/layout/Footer";
+import { LandingPage } from "../components/auth/LandingPage";
+import { LoginPage } from "../components/auth/LoginPage";
+import { RegisterPage } from "../components/auth/RegisterPage";
+import { ForgotPasswordPage } from "../components/auth/ForgotPasswordPage";
+import { DashboardView } from "../components/views/DashboardView";
+import { FacilitiesView } from "../components/views/FacilitiesView";
+import { CalendarView } from "../components/views/CalendarView";
+import { ReservationsView } from "../components/views/ReservationsView";
+import { ResourcesView } from "../components/views/ResourcesView";
+import { ReportsView } from "../components/views/ReportsView";
+import { UserManagementView } from "../components/views/UserManagementView";
+import { ProfileView } from "../components/views/ProfileView";
+import { NotificationsView } from "../components/views/NotificationsView";
+import { ArchitectureView } from "../components/views/ArchitectureView";
+import { FacilityDetailModal } from "../components/facilities/FacilityDetailModal";
+import { ReservationModal } from "../components/reservations/ReservationModal";
+import { AdminApprovalModal } from "../components/reservations/AdminApprovalModal";
+
+function MainAppShell() {
+  const [isTabletCollapsed, setIsTabletCollapsed] = React.useState(true);
+
+  const {
+    isAuthenticated,
+    authView,
+    activeTab,
+    selectedFacilityId,
+    setSelectedFacilityId,
+    facilities,
+    openBookingModal,
+    currentUser,
+  } = useApp();
+
+  // If not authenticated or in auth screens, route to authentication modules
+  if (!isAuthenticated || authView !== "app") {
+    switch (authView) {
+      case "login":
+        return <LoginPage />;
+      case "register":
+        return <RegisterPage />;
+      case "forgot-password":
+        return <ForgotPasswordPage />;
+      case "landing":
+      default:
+        return <LandingPage />;
+    }
+  }
+
+  const isAdmin = currentUser.role === "ADMINISTRATOR";
+
+  // Authenticated Role-Based System
+  const selectedFacility =
+    facilities.find((f) => f.id === selectedFacilityId) || null;
+
+  return (
+    <div className="flex-1 flex flex-col min-h-screen bg-[#FAFAFB] dark:bg-[#09090B]">
+      {/* WCAG 2.4.1 Bypass Blocks: Skip to Main Content */}
+      <a
+        href="#main-content"
+        className="sr-only focus:not-sr-only focus:fixed focus:top-4 focus:left-4 focus:z-50 focus:px-4 focus:py-2.5 focus:bg-[#0F5132] focus:text-white focus:rounded-xl focus:shadow-xl focus:outline-none focus:ring-2 focus:ring-yellow-400 font-semibold text-xs transition-all"
+      >
+        Skip to main content
+      </a>
+
+      <Navbar
+        isTabletCollapsed={isTabletCollapsed}
+        onToggleTabletCollapse={() => setIsTabletCollapsed(!isTabletCollapsed)}
+      />
+
+      <div
+        className={`flex-1 flex flex-col transition-all duration-300 ease-[cubic-bezier(0.32,0.72,0,1)] ${
+          isTabletCollapsed ? "md:pl-20 xl:pl-64" : "md:pl-64 xl:pl-64"
+        }`}
+      >
+        <main
+          id="main-content"
+          tabIndex={-1}
+          className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 pt-6 sm:pt-8 focus:outline-none"
+        >
+          {activeTab === "dashboard" && <DashboardView />}
+          {activeTab === "facilities" && <FacilitiesView />}
+          {activeTab === "calendar" && <CalendarView />}
+          {activeTab === "reservations" && <ReservationsView />}
+          {activeTab === "resources" && <ResourcesView />}
+          {activeTab === "reports" && (isAdmin ? <ReportsView /> : <DashboardView />)}
+          {activeTab === "users" && (isAdmin ? <UserManagementView /> : <DashboardView />)}
+          {activeTab === "profile" && <ProfileView />}
+          {activeTab === "notifications" && <NotificationsView />}
+          {activeTab === "architecture" && (isAdmin ? <ArchitectureView /> : <DashboardView />)}
+        </main>
+        <Footer />
+      </div>
+
+      {/* Global Modals */}
+      <FacilityDetailModal
+        facility={selectedFacility}
+        isOpen={!!selectedFacilityId}
+        onClose={() => setSelectedFacilityId(null)}
+        onReserve={(facility) => {
+          setSelectedFacilityId(null);
+          openBookingModal(facility.id);
+        }}
+      />
+
+      <ReservationModal />
+
+      <AdminApprovalModal />
+    </div>
+  );
+}
 
 export default function Home() {
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert h-5 w-[100px]"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the{" "}
-            <code className="rounded bg-black/[.06] px-1.5 py-0.5 font-mono text-[0.9em] dark:bg-white/[.08]">
-              page.tsx
-            </code>{" "}
-            file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
-        </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert h-[14px] w-4"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={14}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
-        </div>
-      </main>
-    </div>
+    <AppProvider>
+      <MainAppShell />
+    </AppProvider>
   );
 }
