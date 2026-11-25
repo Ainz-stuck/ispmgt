@@ -1,6 +1,6 @@
 "use client";
 
-import React, { createContext, useContext, useState, useMemo } from "react";
+import React, { createContext, useContext, useState, useMemo, useEffect, useCallback } from "react";
 import {
   User,
   UserRole,
@@ -9,20 +9,13 @@ import {
   FacilityStatus,
   ResourceItem,
   Reservation,
-  ReservationStatus,
   ApprovalLog,
   SystemNotification,
   ResourceCondition,
   AuthView,
 } from "../types";
-import {
-  MOCK_USERS,
-  INITIAL_FACILITIES,
-  INITIAL_RESOURCES,
-  INITIAL_RESERVATIONS,
-  INITIAL_APPROVAL_LOGS,
-  INITIAL_NOTIFICATIONS,
-} from "../data/mockData";
+import { useAuth, RegisterPayload } from "./AuthContext";
+import * as db from "../lib/supabase-data";
 
 export type NavTab =
   | "dashboard"
@@ -36,15 +29,17 @@ export type NavTab =
   | "profile"
   | "users";
 
-interface RegisterPayload {
-  firstName: string;
-  lastName: string;
-  email: string;
-  contactNumber: string;
-  department: string;
-  password: string;
-  role: "STUDENT" | "FACULTY";
-}
+const DEFAULT_GUEST: User = {
+  id: "guest",
+  name: "Alex Vance",
+  firstName: "Alex",
+  lastName: "Vance",
+  email: "alex.vance@university.edu",
+  department: "College of Computer Studies",
+  role: "STUDENT",
+  studentOrEmployeeId: "2026-10492",
+  status: "ACTIVE",
+};
 
 interface AppContextType {
   // Authentication & Users
@@ -53,24 +48,24 @@ interface AppContextType {
   setAuthView: (view: AuthView) => void;
   currentUser: User;
   allUsers: User[];
-  login: (email: string, password: string) => { success: boolean; error?: string; role?: UserRole };
-  register: (payload: RegisterPayload) => { success: boolean; error?: string };
-  resetPassword: (email: string, newPassword: string) => { success: boolean; error?: string };
-  logout: () => void;
+  login: (email: string, password: string) => Promise<{ success: boolean; error?: string; role?: UserRole }>;
+  register: (payload: RegisterPayload) => Promise<{ success: boolean; error?: string }>;
+  resetPassword: (email: string, newPassword?: string) => Promise<{ success: boolean; error?: string }>;
+  logout: () => Promise<void>;
   switchRole: (role: UserRole) => void;
-  updateUserProfile: (data: Partial<User>) => void;
-  toggleUserStatus: (userId: string) => void;
+  updateUserProfile: (data: Partial<User>) => Promise<void>;
+  toggleUserStatus: (userId: string) => Promise<void>;
 
   // Facilities
   facilities: Facility[];
-  updateFacilityStatus: (facilityId: FacilityId, status: FacilityStatus) => void;
-  updateFacilityCapacity: (facilityId: FacilityId, capacity: number) => void;
-  updateFacilityDetails: (facilityId: FacilityId, data: Partial<Facility>) => void;
+  updateFacilityStatus: (facilityId: FacilityId, status: FacilityStatus) => Promise<void>;
+  updateFacilityCapacity: (facilityId: FacilityId, capacity: number) => Promise<void>;
+  updateFacilityDetails: (facilityId: FacilityId, data: Partial<Facility>) => Promise<void>;
 
   // Resources
   resources: ResourceItem[];
-  updateResourceCondition: (resourceId: string, condition: ResourceCondition) => void;
-  updateResourceQuantity: (resourceId: string, total: number) => void;
+  updateResourceCondition: (resourceId: string, condition: ResourceCondition) => Promise<void>;
+  updateResourceQuantity: (resourceId: string, total: number) => Promise<void>;
 
   // Reservations
   reservations: Reservation[];
@@ -79,16 +74,16 @@ interface AppContextType {
       Reservation,
       "id" | "reservationCode" | "status" | "submittedAt" | "userId" | "userName" | "userRole" | "userEmail" | "department"
     >
-  ) => { success: boolean; conflict?: Reservation; reservationCode?: string };
-  approveReservation: (reservationId: string, notes?: string) => void;
-  rejectReservation: (reservationId: string, reason: string) => void;
-  cancelReservation: (reservationId: string) => void;
+  ) => Promise<{ success: boolean; conflict?: Reservation; reservationCode?: string }>;
+  approveReservation: (reservationId: string, notes?: string) => Promise<void>;
+  rejectReservation: (reservationId: string, reason: string) => Promise<void>;
+  cancelReservation: (reservationId: string) => Promise<void>;
 
   // Logs & Notifications
   approvalLogs: ApprovalLog[];
   notifications: SystemNotification[];
-  markNotificationAsRead: (id: string) => void;
-  markAllNotificationsAsRead: () => void;
+  markNotificationAsRead: (id: string) => Promise<void>;
+  markAllNotificationsAsRead: () => Promise<void>;
   unreadNotificationsCount: number;
 
   // Navigation & Modals
@@ -118,18 +113,15 @@ interface AppContextType {
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
 export function AppProvider({ children }: { children: React.ReactNode }) {
-  // Authentication State
-  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
-  const [authView, setAuthView] = useState<AuthView>("landing");
-  const [allUsers, setAllUsers] = useState<User[]>(MOCK_USERS);
-  const [currentUser, setCurrentUser] = useState<User>(MOCK_USERS[0]);
+  const auth = useAuth();
 
-  // Core Data
-  const [facilities, setFacilities] = useState<Facility[]>(INITIAL_FACILITIES);
-  const [resources, setResources] = useState<ResourceItem[]>(INITIAL_RESOURCES);
-  const [reservations, setReservations] = useState<Reservation[]>(INITIAL_RESERVATIONS);
-  const [approvalLogs, setApprovalLogs] = useState<ApprovalLog[]>(INITIAL_APPROVAL_LOGS);
-  const [notifications, setNotifications] = useState<SystemNotification[]>(INITIAL_NOTIFICATIONS);
+  // Core Data States
+  const [allUsers, setAllUsers] = useState<User[]>([]);
+  const [facilities, setFacilities] = useState<Facility[]>([]);
+  const [resources, setResources] = useState<ResourceItem[]>([]);
+  const [reservations, setReservations] = useState<Reservation[]>([]);
+  const [approvalLogs, setApprovalLogs] = useState<ApprovalLog[]>([]);
+  const [notifications, setNotifications] = useState<SystemNotification[]>([]);
 
   // UI State
   const [activeTab, setActiveTab] = useState<NavTab>("dashboard");
@@ -140,99 +132,71 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [preselectedTime, setPreselectedTime] = useState<string | null>(null);
   const [selectedReservationForReview, setSelectedReservationForReview] = useState<Reservation | null>(null);
 
-  // Authentication Handlers
-  const login = (email: string, password: string) => {
-    const user = allUsers.find((u) => u.email.toLowerCase() === email.trim().toLowerCase());
-    if (!user) {
-      return { success: false, error: "Invalid credentials. User with this email does not exist." };
-    }
-    if (user.password && user.password !== password) {
-      return { success: false, error: "Incorrect password. Please try again." };
-    }
-    if (user.status === "DEACTIVATED") {
-      return { success: false, error: "Account suspended. Please contact the Facility Administrator." };
-    }
+  // Active user (authenticated or fallback)
+  const currentUser: User = auth.currentUser || DEFAULT_GUEST;
 
-    setCurrentUser(user);
-    setIsAuthenticated(true);
-    setAuthView("app");
+  // Fetch all data from Supabase
+  const loadAppData = useCallback(async () => {
+    try {
+      const [facs, resrcs] = await Promise.all([
+        db.fetchFacilities(),
+        db.fetchResources(),
+      ]);
+      setFacilities(facs);
+      setResources(resrcs);
+
+      if (auth.isAuthenticated && auth.currentUser) {
+        const [users, rsvps, logs, notifs] = await Promise.all([
+          db.fetchAllUsers(),
+          db.fetchReservations(),
+          db.fetchApprovalLogs(),
+          db.fetchNotifications(auth.currentUser.id, auth.currentUser.role),
+        ]);
+        setAllUsers(users);
+        setReservations(rsvps);
+        setApprovalLogs(logs);
+        setNotifications(notifs);
+      }
+    } catch (err) {
+      console.error("Error loading app data from Supabase:", err);
+    }
+  }, [auth.isAuthenticated, auth.currentUser]);
+
+  useEffect(() => {
+    loadAppData();
+  }, [loadAppData]);
+
+  // Auth wrappers
+  const login = async (email: string, pass: string) => {
+    const res = await auth.login(email, pass);
+    if (res.success) {
+      setActiveTab("dashboard");
+    }
+    return res;
+  };
+
+  const register = async (payload: RegisterPayload) => {
+    const res = await auth.register(payload);
+    if (res.success) {
+      setActiveTab("dashboard");
+    }
+    return res;
+  };
+
+  const resetPassword = async (email: string) => {
+    return auth.resetPassword(email);
+  };
+
+  const logout = async () => {
+    await auth.logout();
     setActiveTab("dashboard");
-    return { success: true, role: user.role };
-  };
-
-  const register = (payload: RegisterPayload) => {
-    // Duplicate account prevention
-    const exists = allUsers.some((u) => u.email.toLowerCase() === payload.email.trim().toLowerCase());
-    if (exists) {
-      return { success: false, error: "An account with this institutional email already exists." };
-    }
-
-    const newId = `usr-${payload.role.toLowerCase()}-${Date.now().toString().slice(-4)}`;
-    const studentOrEmployeeId =
-      payload.role === "STUDENT"
-        ? `2026-${Math.floor(10000 + Math.random() * 90000)}`
-        : `FAC-${Math.floor(1000 + Math.random() * 9000)}`;
-
-    const newUser: User = {
-      id: newId,
-      name: `${payload.firstName} ${payload.lastName}`,
-      firstName: payload.firstName,
-      lastName: payload.lastName,
-      email: payload.email.trim(),
-      password: payload.password,
-      contactNumber: payload.contactNumber,
-      department: payload.department,
-      role: payload.role,
-      studentOrEmployeeId,
-      status: "ACTIVE",
-      createdAt: new Date().toISOString().split("T")[0],
-    };
-
-    setAllUsers((prev) => [...prev, newUser]);
-    setCurrentUser(newUser);
-    setIsAuthenticated(true);
-    setAuthView("app");
-    setActiveTab("dashboard");
-
-    // Welcome Notification
-    const notif: SystemNotification = {
-      id: `notif-${Date.now()}`,
-      userId: newUser.id,
-      title: "Welcome to UniSpace",
-      message: `Your account as a ${payload.role === "STUDENT" ? "Student" : "Faculty Member"} is verified and active.`,
-      type: "ACCOUNT_SECURITY",
-      timestamp: "Just now",
-      read: false,
-    };
-    setNotifications((prev) => [notif, ...prev]);
-
-    return { success: true };
-  };
-
-  const resetPassword = (email: string, newPassword: string) => {
-    const userIndex = allUsers.findIndex((u) => u.email.toLowerCase() === email.trim().toLowerCase());
-    if (userIndex === -1) {
-      return { success: false, error: "No account registered with this email address." };
-    }
-
-    setAllUsers((prev) =>
-      prev.map((u, idx) => (idx === userIndex ? { ...u, password: newPassword } : u))
-    );
-
-    return { success: true };
-  };
-
-  const logout = () => {
-    setIsAuthenticated(false);
-    setAuthView("landing");
   };
 
   const switchRole = (role: UserRole) => {
     const targetUser = allUsers.find((u) => u.role === role);
-    if (targetUser) {
-      setCurrentUser(targetUser);
-      setIsAuthenticated(true);
-      setAuthView("app");
+    if (targetUser && auth.setCurrentUser) {
+      auth.setCurrentUser(targetUser);
+      auth.setAuthView("app");
       if (
         role !== "ADMINISTRATOR" &&
         (activeTab === "architecture" || activeTab === "reports" || activeTab === "users")
@@ -242,46 +206,63 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  const updateUserProfile = (data: Partial<User>) => {
-    setCurrentUser((prev) => ({ ...prev, ...data }));
+  const updateUserProfile = async (data: Partial<User>) => {
+    if (!currentUser.id) return;
+    await db.updateUserProfile(currentUser.id, data);
+    if (auth.refreshCurrentUser) {
+      await auth.refreshCurrentUser();
+    }
     setAllUsers((prev) =>
       prev.map((u) => (u.id === currentUser.id ? { ...u, ...data } : u))
     );
   };
 
-  const toggleUserStatus = (userId: string) => {
+  const toggleUserStatus = async (userId: string) => {
+    const target = allUsers.find((u) => u.id === userId);
+    if (!target) return;
+
+    const nextStatus = await db.toggleUserStatus(userId, target.status);
+
     setAllUsers((prev) =>
-      prev.map((u) => {
-        if (u.id === userId) {
-          const nextStatus = u.status === "ACTIVE" ? "DEACTIVATED" : "ACTIVE";
-          // If currentUser is being toggled, update as well
-          if (currentUser.id === userId) {
-            setCurrentUser((c) => ({ ...c, status: nextStatus }));
-          }
-
-          const newLog: ApprovalLog = {
-            id: `log-${Date.now()}`,
-            reservationId: `user-${userId}`,
-            reservationCode: u.studentOrEmployeeId,
-            eventName: "User Access State Modified",
-            facilityName: "Security & Role Access",
-            actorName: currentUser.name,
-            actorRole: currentUser.role,
-            action: "USER_STATUS_CHANGE",
-            timestamp: new Date().toISOString().replace("T", " ").substring(0, 16),
-            notes: `User ${u.name} (${u.email}) account status changed to ${nextStatus}.`,
-          };
-          setApprovalLogs((l) => [newLog, ...l]);
-
-          return { ...u, status: nextStatus };
-        }
-        return u;
-      })
+      prev.map((u) => (u.id === userId ? { ...u, status: nextStatus } : u))
     );
+
+    if (currentUser.id === userId && auth.setCurrentUser) {
+      auth.setCurrentUser((prev) => (prev ? { ...prev, status: nextStatus } : prev));
+    }
+
+    const newLog: ApprovalLog = {
+      id: `log-${Date.now()}`,
+      reservationId: `user-${userId}`,
+      reservationCode: target.studentOrEmployeeId,
+      eventName: "User Access State Modified",
+      facilityName: "Security & Role Access",
+      actorName: currentUser.name,
+      actorRole: currentUser.role,
+      action: "USER_STATUS_CHANGE",
+      timestamp: new Date().toISOString().replace("T", " ").substring(0, 16),
+      notes: `User ${target.name} (${target.email}) account status changed to ${nextStatus}.`,
+    };
+
+    await db.supabase.from("approval_logs").insert({
+      id: newLog.id,
+      reservation_id: newLog.reservationId,
+      reservation_code: newLog.reservationCode,
+      event_name: newLog.eventName,
+      facility_name: newLog.facilityName,
+      actor_name: newLog.actorName,
+      actor_role: newLog.actorRole,
+      action: newLog.action,
+      timestamp: new Date().toISOString(),
+      notes: newLog.notes,
+    });
+
+    setApprovalLogs((l) => [newLog, ...l]);
   };
 
   // Facility Controls
-  const updateFacilityStatus = (facilityId: FacilityId, status: FacilityStatus) => {
+  const updateFacilityStatus = async (facilityId: FacilityId, status: FacilityStatus) => {
+    await db.updateFacilityStatus(facilityId, status);
     setFacilities((prev) =>
       prev.map((f) => (f.id === facilityId ? { ...f, status } : f))
     );
@@ -299,16 +280,32 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       timestamp: new Date().toISOString().replace("T", " ").substring(0, 16),
       notes: `Status changed to ${status} by administrator.`,
     };
+
+    await db.supabase.from("approval_logs").insert({
+      id: newLog.id,
+      reservation_id: newLog.reservationId,
+      reservation_code: newLog.reservationCode,
+      event_name: newLog.eventName,
+      facility_name: newLog.facilityName,
+      actor_name: newLog.actorName,
+      actor_role: newLog.actorRole,
+      action: newLog.action,
+      timestamp: new Date().toISOString(),
+      notes: newLog.notes,
+    });
+
     setApprovalLogs((prev) => [newLog, ...prev]);
   };
 
-  const updateFacilityCapacity = (facilityId: FacilityId, capacity: number) => {
+  const updateFacilityCapacity = async (facilityId: FacilityId, capacity: number) => {
+    await db.updateFacilityCapacity(facilityId, capacity);
     setFacilities((prev) =>
       prev.map((f) => (f.id === facilityId ? { ...f, capacity } : f))
     );
   };
 
-  const updateFacilityDetails = (facilityId: FacilityId, data: Partial<Facility>) => {
+  const updateFacilityDetails = async (facilityId: FacilityId, data: Partial<Facility>) => {
+    await db.updateFacilityDetails(facilityId, data);
     setFacilities((prev) =>
       prev.map((f) => (f.id === facilityId ? { ...f, ...data } : f))
     );
@@ -326,6 +323,20 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       timestamp: new Date().toISOString().replace("T", " ").substring(0, 16),
       notes: `Facility specifications and media updated by administrator ${currentUser.name}.`,
     };
+
+    await db.supabase.from("approval_logs").insert({
+      id: newLog.id,
+      reservation_id: newLog.reservationId,
+      reservation_code: newLog.reservationCode,
+      event_name: newLog.eventName,
+      facility_name: newLog.facilityName,
+      actor_name: newLog.actorName,
+      actor_role: newLog.actorRole,
+      action: newLog.action,
+      timestamp: new Date().toISOString(),
+      notes: newLog.notes,
+    });
+
     setApprovalLogs((prev) => [newLog, ...prev]);
 
     const newNotif: SystemNotification = {
@@ -337,17 +348,30 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       read: false,
       type: "FACILITY_UPDATE",
     };
+
+    await db.supabase.from("notifications").insert({
+      id: newNotif.id,
+      user_id: currentUser.id,
+      title: newNotif.title,
+      message: newNotif.message,
+      type: newNotif.type,
+      timestamp: new Date().toISOString(),
+      read: false,
+    });
+
     setNotifications((prev) => [newNotif, ...prev]);
   };
 
   // Resource Controls
-  const updateResourceCondition = (resourceId: string, condition: ResourceCondition) => {
+  const updateResourceCondition = async (resourceId: string, condition: ResourceCondition) => {
+    await db.updateResourceCondition(resourceId, condition);
     setResources((prev) =>
       prev.map((r) => (r.id === resourceId ? { ...r, condition } : r))
     );
   };
 
-  const updateResourceQuantity = (resourceId: string, totalQuantity: number) => {
+  const updateResourceQuantity = async (resourceId: string, totalQuantity: number) => {
+    await db.updateResourceQuantity(resourceId, totalQuantity);
     setResources((prev) =>
       prev.map((r) =>
         r.id === resourceId
@@ -369,101 +393,42 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     endTime: string,
     excludeReservationId?: string
   ): Reservation | null => {
-    const conflict = reservations.find((r) => {
-      if (r.id === excludeReservationId) return false;
-      if (r.facilityId !== facilityId) return false;
-      if (r.date !== date) return false;
-      if (r.status === "REJECTED" || r.status === "CANCELLED") return false;
-
-      const startMinutes = (time: string) => {
-        const [h, m] = time.split(":").map(Number);
-        return h * 60 + m;
-      };
-
-      const newStart = startMinutes(startTime);
-      const newEnd = startMinutes(endTime);
-      const existingStart = startMinutes(r.startTime);
-      const existingEnd = startMinutes(r.endTime);
-
-      return newStart < existingEnd && newEnd > existingStart;
-    });
-
+    const conflict = reservations.find((r) =>
+      db.checkTimeConflict(r, facilityId, date, startTime, endTime, excludeReservationId)
+    );
     return conflict || null;
   };
 
-  const createReservation = (
+  const createReservation = async (
     data: Omit<
       Reservation,
       "id" | "reservationCode" | "status" | "submittedAt" | "userId" | "userName" | "userRole" | "userEmail" | "department"
     >
   ) => {
-    const conflict = checkConflict(data.facilityId, data.date, data.startTime, data.endTime);
-    if (conflict) {
-      return { success: false, conflict };
+    const res = await db.createReservationRecord(data, currentUser, reservations);
+    if (!res.success) {
+      return { success: false, conflict: res.conflict };
     }
 
-    const newCode = `US-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`;
-    const newReservation: Reservation = {
-      ...data,
-      id: `res-${Date.now()}`,
-      reservationCode: newCode,
-      userId: currentUser.id,
-      userName: currentUser.name,
-      userRole: currentUser.role,
-      userEmail: currentUser.email,
-      department: currentUser.department,
-      status: "PENDING",
-      submittedAt: new Date().toISOString().replace("T", " ").substring(0, 16),
-    };
+    if (res.reservation) {
+      setReservations((prev) => [res.reservation!, ...prev]);
+    }
+    // Refresh notifications & logs from DB
+    const [logs, notifs] = await Promise.all([
+      db.fetchApprovalLogs(),
+      db.fetchNotifications(currentUser.id, currentUser.role),
+    ]);
+    setApprovalLogs(logs);
+    setNotifications(notifs);
 
-    setReservations((prev) => [newReservation, ...prev]);
-
-    const newLog: ApprovalLog = {
-      id: `log-${Date.now()}`,
-      reservationId: newReservation.id,
-      reservationCode: newCode,
-      eventName: data.eventName,
-      facilityName: data.facilityName,
-      actorName: currentUser.name,
-      actorRole: currentUser.role,
-      action: "SUBMITTED",
-      timestamp: newReservation.submittedAt,
-      notes: "Reservation submitted and queued for administrator schedule review.",
-    };
-    setApprovalLogs((prev) => [newLog, ...prev]);
-
-    const userNotif: SystemNotification = {
-      id: `notif-${Date.now()}`,
-      userId: currentUser.id,
-      title: `Reservation Submitted: ${data.facilityName}`,
-      message: `Your booking request ${newCode} for "${data.eventName}" has been logged and is pending review.`,
-      type: "RESERVATION_SUBMITTED",
-      timestamp: "Just now",
-      read: false,
-      reservationId: newReservation.id,
-    };
-
-    const adminNotif: SystemNotification = {
-      id: `notif-adm-${Date.now()}`,
-      userId: "usr-admin-01",
-      title: `New Reservation Request: ${data.facilityName}`,
-      message: `${currentUser.name} (${currentUser.role}) requested ${data.facilityName} for "${data.eventName}" on ${data.date}.`,
-      type: "RESERVATION_SUBMITTED",
-      timestamp: "Just now",
-      read: false,
-      reservationId: newReservation.id,
-    };
-
-    setNotifications((prev) => [userNotif, adminNotif, ...prev]);
-
-    return { success: true, reservationCode: newCode };
+    return { success: true, reservationCode: res.reservationCode };
   };
 
-  const approveReservation = (reservationId: string, notes?: string) => {
+  const approveReservation = async (reservationId: string, notes?: string) => {
     const target = reservations.find((r) => r.id === reservationId);
     if (!target) return;
 
-    const reviewedAt = new Date().toISOString().replace("T", " ").substring(0, 16);
+    await db.approveReservationRecord(target, currentUser, notes);
 
     setReservations((prev) =>
       prev.map((r) =>
@@ -471,7 +436,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           ? {
               ...r,
               status: "APPROVED",
-              reviewedAt,
+              reviewedAt: new Date().toISOString().replace("T", " ").substring(0, 16),
               reviewedBy: currentUser.name,
               adminNotes: notes || "Approved by facility administrator.",
             }
@@ -479,38 +444,19 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       )
     );
 
-    const newLog: ApprovalLog = {
-      id: `log-${Date.now()}`,
-      reservationId: target.id,
-      reservationCode: target.reservationCode,
-      eventName: target.eventName,
-      facilityName: target.facilityName,
-      actorName: currentUser.name,
-      actorRole: currentUser.role,
-      action: "APPROVED",
-      timestamp: reviewedAt,
-      notes: notes || "Approved after facility and resource verification.",
-    };
-    setApprovalLogs((prev) => [newLog, ...prev]);
-
-    const notif: SystemNotification = {
-      id: `notif-${Date.now()}`,
-      userId: target.userId,
-      title: `Reservation Approved: ${target.facilityName}`,
-      message: `Your booking request ${target.reservationCode} for "${target.eventName}" on ${target.date} has been approved.`,
-      type: "RESERVATION_APPROVED",
-      timestamp: "Just now",
-      read: false,
-      reservationId: target.id,
-    };
-    setNotifications((prev) => [notif, ...prev]);
+    const [logs, notifs] = await Promise.all([
+      db.fetchApprovalLogs(),
+      db.fetchNotifications(currentUser.id, currentUser.role),
+    ]);
+    setApprovalLogs(logs);
+    setNotifications(notifs);
   };
 
-  const rejectReservation = (reservationId: string, reason: string) => {
+  const rejectReservation = async (reservationId: string, reason: string) => {
     const target = reservations.find((r) => r.id === reservationId);
     if (!target) return;
 
-    const reviewedAt = new Date().toISOString().replace("T", " ").substring(0, 16);
+    await db.rejectReservationRecord(target, currentUser, reason);
 
     setReservations((prev) =>
       prev.map((r) =>
@@ -518,7 +464,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           ? {
               ...r,
               status: "REJECTED",
-              reviewedAt,
+              reviewedAt: new Date().toISOString().replace("T", " ").substring(0, 16),
               reviewedBy: currentUser.name,
               rejectionReason: reason,
             }
@@ -526,46 +472,31 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       )
     );
 
-    const newLog: ApprovalLog = {
-      id: `log-${Date.now()}`,
-      reservationId: target.id,
-      reservationCode: target.reservationCode,
-      eventName: target.eventName,
-      facilityName: target.facilityName,
-      actorName: currentUser.name,
-      actorRole: currentUser.role,
-      action: "REJECTED",
-      timestamp: reviewedAt,
-      notes: `Rejected with reason: ${reason}`,
-    };
-    setApprovalLogs((prev) => [newLog, ...prev]);
-
-    const notif: SystemNotification = {
-      id: `notif-${Date.now()}`,
-      userId: target.userId,
-      title: `Reservation Rejected: ${target.facilityName}`,
-      message: `Your booking request ${target.reservationCode} for "${target.eventName}" was declined. Reason: ${reason}`,
-      type: "RESERVATION_REJECTED",
-      timestamp: "Just now",
-      read: false,
-      reservationId: target.id,
-    };
-    setNotifications((prev) => [notif, ...prev]);
+    const [logs, notifs] = await Promise.all([
+      db.fetchApprovalLogs(),
+      db.fetchNotifications(currentUser.id, currentUser.role),
+    ]);
+    setApprovalLogs(logs);
+    setNotifications(notifs);
   };
 
-  const cancelReservation = (reservationId: string) => {
+  const cancelReservation = async (reservationId: string) => {
+    await db.cancelReservationRecord(reservationId);
     setReservations((prev) =>
       prev.map((r) => (r.id === reservationId ? { ...r, status: "CANCELLED" } : r))
     );
   };
 
-  const markNotificationAsRead = (id: string) => {
+  const markNotificationAsRead = async (id: string) => {
+    await db.markNotificationAsRead(id);
     setNotifications((prev) =>
       prev.map((n) => (n.id === id ? { ...n, read: true } : n))
     );
   };
 
-  const markAllNotificationsAsRead = () => {
+  const markAllNotificationsAsRead = async () => {
+    if (!currentUser.id) return;
+    await db.markAllNotificationsAsRead(currentUser.id);
     setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
   };
 
@@ -596,9 +527,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   return (
     <AppContext.Provider
       value={{
-        isAuthenticated,
-        authView,
-        setAuthView,
+        isAuthenticated: auth.isAuthenticated,
+        authView: auth.authView,
+        setAuthView: auth.setAuthView,
         currentUser,
         allUsers,
         login,

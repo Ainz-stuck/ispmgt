@@ -24,7 +24,7 @@ export function ForgotPasswordPage() {
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
 
-  const handleSendLink = (e: React.FormEvent) => {
+  const handleSendLink = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!email.trim() || !email.includes("@")) {
       setError("Please enter a valid institutional email address.");
@@ -33,13 +33,16 @@ export function ForgotPasswordPage() {
     setError(null);
     setIsLoading(true);
 
-    setTimeout(() => {
-      setIsLoading(false);
-      setStep(2); // Move to code / new password step
-    }, 450);
+    const res = await resetPassword(email);
+    setIsLoading(false);
+    if (!res.success) {
+      setError(res.error || "Failed to dispatch password recovery email.");
+    } else {
+      setStep(3); // Direct to confirmation
+    }
   };
 
-  const handleResetPassword = (e: React.FormEvent) => {
+  const handleResetPassword = async (e: React.FormEvent) => {
     e.preventDefault();
     if (newPassword.length < 6) {
       setError("New password must be at least 6 characters long.");
@@ -53,15 +56,13 @@ export function ForgotPasswordPage() {
     setIsLoading(true);
     setError(null);
 
-    setTimeout(() => {
-      const res = resetPassword(email, newPassword);
-      setIsLoading(false);
-      if (!res.success) {
-        setError(res.error || "Password reset failed.");
-      } else {
-        setStep(3); // Success step
-      }
-    }, 400);
+    const res = await resetPassword(email, newPassword);
+    setIsLoading(false);
+    if (!res.success) {
+      setError(res.error || "Password reset failed.");
+    } else {
+      setStep(3); // Success step
+    }
   };
 
   return (
@@ -194,11 +195,10 @@ export function ForgotPasswordPage() {
               </div>
               <div className="space-y-1">
                 <h3 className="font-bold text-lg text-zinc-900 dark:text-zinc-100">
-                  Password Reset Complete
+                  Password Recovery Link Sent
                 </h3>
                 <p className="text-xs text-zinc-500 leading-relaxed max-w-xs mx-auto">
-                  Your new password has been verified in the central institutional directory. You can now
-                  sign in to UniSpace with your updated credentials.
+                  A password recovery link has been dispatched to <strong>{email}</strong>. Please check your inbox and follow the instructions to configure your new institutional credentials.
                 </p>
               </div>
               <Button

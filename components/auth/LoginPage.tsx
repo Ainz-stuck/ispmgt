@@ -28,7 +28,7 @@ export function LoginPage() {
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!email.trim() || !password) {
       setError("Please provide your institutional email and password.");
@@ -38,13 +38,11 @@ export function LoginPage() {
     setIsLoading(true);
     setError(null);
 
-    setTimeout(() => {
-      const res = login(email, password);
-      setIsLoading(false);
-      if (!res.success) {
-        setError(res.error || "Login failed.");
-      }
-    }, 350);
+    const res = await login(email, password);
+    setIsLoading(false);
+    if (!res.success) {
+      setError(res.error || "Login failed.");
+    }
   };
 
   const fillQuickCredentials = (demoEmail: string, demoPass: string) => {

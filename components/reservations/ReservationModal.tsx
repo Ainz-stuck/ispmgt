@@ -161,7 +161,7 @@ export function ReservationModal() {
     return true;
   };
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     if (!policyAccepted) {
       setFormError("You must acknowledge the University Facility Terms & Safety Policy.");
       return;
@@ -183,7 +183,7 @@ export function ReservationModal() {
       }
     });
 
-    const result = createReservation({
+    const result = await createReservation({
       facilityId: selectedFacility.id,
       facilityName: selectedFacility.name,
       eventName,

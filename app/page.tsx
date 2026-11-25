@@ -1,6 +1,7 @@
 "use client";
 
 import React from "react";
+import { AuthProvider } from "../context/AuthContext";
 import { AppProvider, useApp } from "../context/AppContext";
 import { Navbar } from "../components/layout/Navbar";
 import { Footer } from "../components/layout/Footer";
@@ -116,8 +117,10 @@ function MainAppShell() {
 
 export default function Home() {
   return (
-    <AppProvider>
-      <MainAppShell />
-    </AppProvider>
+    <AuthProvider>
+      <AppProvider>
+        <MainAppShell />
+      </AppProvider>
+    </AuthProvider>
   );
 }
