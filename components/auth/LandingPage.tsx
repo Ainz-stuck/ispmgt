@@ -30,7 +30,7 @@ export function LandingPage() {
       {/* Top Institutional Notification Hairline */}
       <div className="bg-[#0A3622] text-white text-[11px] px-4 sm:px-8 py-2 flex items-center justify-between border-b border-emerald-950 font-mono tracking-wide">
         <div className="flex items-center gap-2">
-          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" />
+          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping shrink-0" />
           <span className="font-medium text-emerald-100">
             Carlos Hilado Memorial State University - Talisay Campus
           </span>
@@ -46,18 +46,18 @@ export function LandingPage() {
 
       {/* Floating Island Navigation Bar */}
       <div className="sticky top-4 z-40 px-3 sm:px-6 w-full max-w-7xl 2xl:max-w-[1600px] mx-auto">
-        <header className="rounded-full bg-white/80 dark:bg-zinc-900/80 backdrop-blur-2xl ring-1 ring-black/[0.06] dark:ring-white/[0.08] shadow-[0_16px_32px_-8px_rgba(0,0,0,0.08)] px-3 sm:px-7 h-16 flex items-center justify-between transition-all duration-300">
+        <header className="rounded-full bg-white/80 dark:bg-zinc-900/80 backdrop-blur-2xl ring-1 ring-black/[0.06] dark:ring-white/[0.08] shadow-[0_16px_32px_-8px_rgba(0,0,0,0.08)] pl-2.5 pr-2 sm:px-7 h-14 sm:h-16 flex items-center justify-between gap-2 transition-all duration-300">
           {/* Logo & Identity */}
-          <div className="flex items-center gap-2 sm:gap-3">
-            <div className="w-9 h-9 rounded-full bg-[#0F5132] flex items-center justify-center text-white shadow-sm ring-2 ring-emerald-600/30 shrink-0">
-              <Buildings size={20} weight="bold" />
+          <div className="flex items-center gap-2 sm:gap-3 min-w-0 shrink-0">
+            <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-full bg-[#0F5132] flex items-center justify-center text-white shadow-sm ring-2 ring-emerald-600/30 shrink-0">
+              <Buildings size={18} className="sm:w-5 sm:h-5" weight="bold" />
             </div>
             <div>
               <div className="flex items-center gap-1.5 sm:gap-2">
-                <span className="text-base sm:text-lg font-bold tracking-tight text-zinc-900 dark:text-zinc-50 font-sans">
+                <span className="text-sm sm:text-lg font-bold tracking-tight text-zinc-900 dark:text-zinc-50 font-sans">
                   UniSpace
                 </span>
-                <span className="text-[9px] font-mono uppercase px-1.5 sm:px-2 py-0.5 rounded-full bg-emerald-50 text-[#0F5132] dark:bg-emerald-950 dark:text-emerald-300 ring-1 ring-emerald-500/20 font-semibold tracking-wider">
+                <span className="hidden sm:inline-flex text-[9px] font-mono uppercase px-2 py-0.5 rounded-full bg-emerald-50 text-[#0F5132] dark:bg-emerald-950 dark:text-emerald-300 ring-1 ring-emerald-500/20 font-semibold tracking-wider">
                   v2.6
                 </span>
               </div>
@@ -78,13 +78,13 @@ export function LandingPage() {
           </div>
 
           {/* Auth Actions with Pill Architecture */}
-          <div className="flex items-center gap-1.5 sm:gap-2">
+          <div className="flex items-center gap-1 sm:gap-2 shrink-0">
             <Button
               variant="ghost"
               size="sm"
               pill
               onClick={() => setAuthView("login")}
-              className="text-xs min-h-[44px] px-3 sm:px-4"
+              className="text-xs min-h-[40px] sm:min-h-[44px] px-2.5 sm:px-4 shrink-0"
             >
               Sign In
             </Button>
@@ -94,9 +94,10 @@ export function LandingPage() {
               pill
               onClick={() => setAuthView("register")}
               trailingIcon={<UserPlus size={13} weight="bold" />}
-              className="text-xs shadow-md min-h-[44px] px-3 sm:px-4"
+              className="text-xs shadow-md min-h-[40px] sm:min-h-[44px] px-2.5 sm:px-4 shrink-0"
             >
-              <span className="hidden sm:inline">Create </span>Account
+              <span className="sm:hidden">Register</span>
+              <span className="hidden sm:inline">Create Account</span>
             </Button>
           </div>
         </header>

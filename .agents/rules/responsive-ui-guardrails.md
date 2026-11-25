@@ -1,0 +1,6 @@
+# Responsive UI & Tailwind Component Guardrails
+
+- **Mobile Header Width Budget (360px)**: When building or editing headers/navbars with `whitespace-nowrap` action buttons inside a rounded or floating container, budget total horizontal content (logo + badges + buttons + padding + gaps) to fit within `320px–360px` viewports without horizontal overflow or clipping. Hide secondary badges (`hidden sm:inline-flex`) or shorten CTA labels on `< 640px` (`sm:`) rather than letting elements push outside the container.
+- **Concentric Pill Insets**: When placing pill buttons (`rounded-full`) inside a pill container (`rounded-full`), keep container right padding and button height concentric (e.g., `h-14` / `56px` container with `min-h-[40px]` button and `pr-2` / `8px` inset) so outer and inner radii stay aligned.
+- **Non-Shrinking Status Dots & Icons**: Always add `shrink-0` to small decorative indicators (status dots, icon circles) placed next to wrapping text on mobile.
+- **Tailwind Class Overrides in UI Primitives**: Always merge base variant classes and caller `className` props with `twMerge` (from `tailwind-merge`) rather than raw string interpolation so responsive `px-*` / `h-*` / `min-h-*` overrides apply deterministically.

@@ -1,4 +1,5 @@
 import React from "react";
+import { twMerge } from "tailwind-merge";
 
 interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
   variant?: "primary" | "secondary" | "outline" | "ghost" | "danger" | "success";
@@ -64,9 +65,14 @@ export function Button({
 
   return (
     <button
-      className={`${baseStyles} ${radiusStyle} ${sizeStyles[size]} ${variantStyles[variant]} ${
-        fullWidth ? "w-full" : ""
-      } ${className}`}
+      className={twMerge(
+        baseStyles,
+        radiusStyle,
+        sizeStyles[size],
+        variantStyles[variant],
+        fullWidth && "w-full",
+        className
+      )}
       disabled={disabled || loading}
       {...props}
     >
