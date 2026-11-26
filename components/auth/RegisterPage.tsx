@@ -32,10 +32,8 @@ export function RegisterPage() {
   const [confirmPassword, setConfirmPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
 
-  // Role Selection (Student or Faculty Member only)
+  // Role Selection (Student or Faculty & Staff)
   const [role, setRole] = useState<"STUDENT" | "FACULTY">("STUDENT");
-  const [inviteCode, setInviteCode] = useState("");
-  const [showAdminCode, setShowAdminCode] = useState(false);
 
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -95,7 +93,6 @@ export function RegisterPage() {
       studentOrEmployeeId: studentOrEmployeeId.trim(),
       password,
       role,
-      inviteCode: inviteCode.trim() || undefined,
     });
 
     setIsLoading(false);
@@ -281,27 +278,6 @@ export function RegisterPage() {
                     required
                   />
                 </div>
-              </div>
-              {/* Admin Authorization Code (Optional) */}
-              <div className="pt-2">
-                <button
-                  type="button"
-                  onClick={() => setShowAdminCode(!showAdminCode)}
-                  className="text-[11px] font-semibold text-[#0F5132] dark:text-emerald-400 hover:underline flex items-center gap-1"
-                >
-                  {showAdminCode ? "– Hide Administrator Invite Code" : "+ Have an Administrator Invite Code?"}
-                </button>
-                {showAdminCode && (
-                  <div className="mt-2 p-3 bg-zinc-50 dark:bg-zinc-800/60 rounded-xl border border-zinc-200 dark:border-zinc-700">
-                    <Input
-                      label="Administrator Invite Code"
-                      placeholder="Enter authorization invite code"
-                      value={inviteCode}
-                      onChange={(e) => setInviteCode(e.target.value)}
-                      helperText="Entering a verified authorization code elevates this account to Administrator status."
-                    />
-                  </div>
-                )}
               </div>
             </div>
 

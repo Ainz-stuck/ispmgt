@@ -15,8 +15,7 @@ export interface RegisterPayload {
   department: string;
   studentOrEmployeeId: string;
   password: string;
-  role: "STUDENT" | "FACULTY" | "ADMINISTRATOR";
-  inviteCode?: string;
+  role: "STUDENT" | "FACULTY";
 }
 
 const VALID_UNAUTH_VIEWS = new Set<AuthView>(["landing", "login", "register", "forgot-password"]);
@@ -247,51 +246,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         success: false,
         error: "Student or Employee ID is required.",
       };
-    }
-
-    // If an admin invite code is provided, validate & create securely on the server
-    if (payload.inviteCode?.trim()) {
-      const response = await fetch("/api/auth/register-admin", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          firstName: payload.firstName.trim(),
-          lastName: payload.lastName.trim(),
-          email: normalizedEmail,
-          contactNumber: payload.contactNumber.trim(),
-          department: payload.department,
-          studentOrEmployeeId: cleanId,
-          password: payload.password,
-          inviteCode: payload.inviteCode.trim(),
-        }),
-      });
-
-      const result = await response.json();
-      if (!response.ok) {
-        return {
-          success: false,
-          error: result.error || "Administrator registration failed.",
-        };
-      }
-
-      const signInRes = await login(normalizedEmail, payload.password);
-      if (!signInRes.success) {
-        return { success: false, error: signInRes.error };
-      }
-
-      const { data: userData } = await supabase.auth.getUser();
-      if (userData?.user?.id) {
-        await insertNotification({
-          userId: userData.user.id,
-          title: "Welcome to UniSpace",
-          message: "Your Facility Administrator account is verified and active.",
-          type: "ACCOUNT_SECURITY",
-          timestamp: new Date().toISOString(),
-          read: false,
-        }).catch(() => {});
-      }
-
-      return { success: true };
     }
 
     // Standard Student / Faculty & Staff signup (role enforced in DB trigger)
