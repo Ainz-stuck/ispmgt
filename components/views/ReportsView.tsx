@@ -32,8 +32,8 @@ export function ReportsView() {
   const facilityStats = facilities.map((f) => {
     const facilityBookings = reservations.filter((r) => r.facilityId === f.id);
     const approved = facilityBookings.filter((r) => r.status === "APPROVED").length;
-    // Calculate simulated utilization % based on bookings
-    const utilizationPct = Math.min(95, 30 + facilityBookings.length * 15);
+    const utilizationPct =
+      totalBookings > 0 ? Math.round((facilityBookings.length / totalBookings) * 100) : 0;
 
     return {
       id: f.id,
@@ -44,6 +44,37 @@ export function ReportsView() {
       utilizationPct,
     };
   }).sort((a, b) => b.totalRequests - a.totalRequests);
+
+  const avgLeadDays = (() => {
+    const diffs = reservations
+      .map((r) => {
+        if (!r.date || !r.submittedAt) return null;
+        const eventMs = new Date(`${r.date}T00:00:00`).getTime();
+        const createdMs = new Date(r.submittedAt).getTime();
+        if (!Number.isFinite(eventMs) || !Number.isFinite(createdMs)) return null;
+        return Math.max(0, (eventMs - createdMs) / 86_400_000);
+      })
+      .filter((v): v is number => v !== null);
+    if (diffs.length === 0) return "0.0";
+    return (diffs.reduce((sum, v) => sum + v, 0) / diffs.length).toFixed(1);
+  })();
+
+  const departmentShares = (() => {
+    if (totalBookings === 0) return [];
+    const counts = new Map<string, number>();
+    for (const r of reservations) {
+      const dept = r.department?.trim() || "General Campus Unit";
+      counts.set(dept, (counts.get(dept) ?? 0) + 1);
+    }
+    return Array.from(counts.entries())
+      .map(([name, count]) => ({
+        name,
+        count,
+        pct: Math.round((count / totalBookings) * 100),
+      }))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 5);
+  })();
 
   return (
     <div className="space-y-8 pb-16">
@@ -91,7 +122,7 @@ export function ReportsView() {
             {totalBookings}
           </div>
           <span className="text-[11px] text-emerald-700 dark:text-emerald-400 font-medium flex items-center gap-1 mt-1">
-            <TrendUp size={13} weight="bold" /> +14% vs previous term
+            <TrendUp size={13} weight="bold" /> {pendingCount} pending review
           </span>
         </div>
 
@@ -112,10 +143,10 @@ export function ReportsView() {
             Average Lead Time
           </span>
           <div className="text-3xl font-bold tracking-tight text-zinc-900 dark:text-zinc-100 mt-2">
-            4.2 <span className="text-sm font-normal text-zinc-400">days</span>
+            {avgLeadDays} <span className="text-sm font-normal text-zinc-400">days</span>
           </div>
           <span className="text-[11px] text-zinc-500 mt-1 block">
-            Compliant with 3-day minimum rule
+            Computed from live booking submissions
           </span>
         </div>
 
@@ -313,22 +344,18 @@ export function ReportsView() {
               </h3>
             </CardHeader>
             <CardBody className="space-y-3 text-xs">
-              <div className="flex justify-between">
-                <span>College of Computer Studies</span>
-                <strong className="text-zinc-900 dark:text-zinc-100">38%</strong>
-              </div>
-              <div className="flex justify-between">
-                <span>College of Engineering</span>
-                <strong className="text-zinc-900 dark:text-zinc-100">26%</strong>
-              </div>
-              <div className="flex justify-between">
-                <span>Athletics & Sports Council</span>
-                <strong className="text-zinc-900 dark:text-zinc-100">21%</strong>
-              </div>
-              <div className="flex justify-between">
-                <span>Student Government Association</span>
-                <strong className="text-zinc-900 dark:text-zinc-100">15%</strong>
-              </div>
+              {departmentShares.length === 0 ? (
+                <p className="text-zinc-500">No reservation records yet.</p>
+              ) : (
+                departmentShares.map((dept) => (
+                  <div key={dept.name} className="flex justify-between gap-2">
+                    <span className="truncate">{dept.name}</span>
+                    <strong className="text-zinc-900 dark:text-zinc-100 shrink-0">
+                      {dept.pct}% ({dept.count})
+                    </strong>
+                  </div>
+                ))
+              )}
             </CardBody>
           </Card>
         </div>

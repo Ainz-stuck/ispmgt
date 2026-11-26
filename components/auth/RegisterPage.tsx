@@ -278,7 +278,7 @@ export function RegisterPage() {
                   <div className="mt-2 p-3 bg-zinc-50 dark:bg-zinc-800/60 rounded-xl border border-zinc-200 dark:border-zinc-700">
                     <Input
                       label="Administrator Invite Code"
-                      placeholder="e.g. UNISPACE-ADMIN-2026"
+                      placeholder="Enter authorization invite code"
                       value={inviteCode}
                       onChange={(e) => setInviteCode(e.target.value)}
                       helperText="Entering a verified authorization code elevates this account to Administrator status."

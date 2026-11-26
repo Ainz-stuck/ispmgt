@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from "react";
 import { useApp, NavTab } from "../../context/AppContext";
+import { getInitials } from "../../lib/utils";
 import {
   Buildings,
   Calendar,
@@ -11,23 +12,17 @@ import {
   Bell,
   User,
   PlusCircle,
-  Student,
-  ChalkboardTeacher,
-  ShieldCheck,
   CheckCircle,
   FileCode,
   UserGear,
   SignOut,
-  CaretDown,
   List,
   X,
   CaretLeft,
   CaretRight,
-  SlidersHorizontal,
   House,
 } from "@phosphor-icons/react";
 import { RoleBadge } from "../ui/Badge";
-import { Button } from "../ui/Button";
 
 interface NavbarProps {
   isTabletCollapsed?: boolean;
@@ -37,7 +32,6 @@ interface NavbarProps {
 export function Navbar({ isTabletCollapsed = true, onToggleTabletCollapse }: NavbarProps) {
   const {
     currentUser,
-    switchRole,
     activeTab,
     setActiveTab,
     unreadNotificationsCount,
@@ -49,8 +43,6 @@ export function Navbar({ isTabletCollapsed = true, onToggleTabletCollapse }: Nav
 
   const [isMobileDrawerOpen, setIsMobileDrawerOpen] = useState(false);
   const [isNotifOpen, setIsNotifOpen] = useState(false);
-  const [isRoleDropdownOpen, setIsRoleDropdownOpen] = useState(false);
-  const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
 
   const isAdmin = currentUser.role === "ADMINISTRATOR";
 
@@ -124,8 +116,6 @@ export function Navbar({ isTabletCollapsed = true, onToggleTabletCollapse }: Nav
       if (e.key === "Escape") {
         setIsMobileDrawerOpen(false);
         setIsNotifOpen(false);
-        setIsRoleDropdownOpen(false);
-        setIsUserMenuOpen(false);
       }
     };
     window.addEventListener("keydown", handleKeyDown);
@@ -257,7 +247,7 @@ export function Navbar({ isTabletCollapsed = true, onToggleTabletCollapse }: Nav
               className="flex items-center gap-2.5 min-w-0 cursor-pointer flex-1"
             >
               <div className="w-8 h-8 rounded-full bg-[#0F5132] text-white font-bold flex items-center justify-center text-xs shrink-0 ring-1 ring-emerald-500/30">
-                {currentUser.name.split(" ").map((n) => n[0]).join("")}
+                {getInitials(currentUser.name)}
               </div>
               <div className={`min-w-0 ${isTabletCollapsed ? "md:hidden xl:block" : "block"}`}>
                 <div className="font-bold text-xs text-black dark:text-black truncate">
@@ -296,7 +286,7 @@ export function Navbar({ isTabletCollapsed = true, onToggleTabletCollapse }: Nav
           <div className="flex items-center gap-2">
             <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
             <span className="font-medium tracking-wide">
-              Greenwich University System · Central Facility Operations
+              Carlos Hilado Memorial State University · Talisay Campus
             </span>
           </div>
           <div className="flex items-center gap-4 text-emerald-200 text-[11px]">
@@ -316,92 +306,10 @@ export function Navbar({ isTabletCollapsed = true, onToggleTabletCollapse }: Nav
           </div>
 
           <div className="flex items-center gap-3">
-            {/* Role Simulator Pill Dropdown */}
-            <div className="relative">
-              <button
-                type="button"
-                onClick={() => setIsRoleDropdownOpen(!isRoleDropdownOpen)}
-                aria-haspopup="menu"
-                aria-expanded={isRoleDropdownOpen}
-                className="flex items-center gap-2 px-3 py-1.5 rounded-full border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-900 hover:bg-zinc-100 text-xs transition-colors"
-                title="Switch simulated role for testing"
-                aria-label="Switch simulated role for testing"
-              >
-                <span className="text-[10px] text-zinc-400 uppercase tracking-widest font-mono">Role:</span>
-                <RoleBadge role={currentUser.role} />
-                <CaretDown size={12} className="text-zinc-400" />
-              </button>
-
-              {isRoleDropdownOpen && (
-                <div
-                  role="menu"
-                  aria-label="Simulate Role Access"
-                  className="absolute right-0 mt-2 w-64 bg-white dark:bg-zinc-900 rounded-2xl shadow-xl border border-zinc-200 dark:border-zinc-800 p-2 z-50"
-                >
-                  <div className="text-[11px] font-semibold text-zinc-400 uppercase tracking-wider px-2 py-1 mb-1">
-                    Simulate Role Access
-                  </div>
-                  <button
-                    type="button"
-                    role="menuitem"
-                    onClick={() => {
-                      switchRole("STUDENT");
-                      setIsRoleDropdownOpen(false);
-                    }}
-                    className={`w-full flex items-center gap-2 px-2.5 py-2 text-left rounded-lg text-xs transition-colors ${
-                      currentUser.role === "STUDENT"
-                        ? "bg-emerald-50 text-[#0F5132] font-semibold dark:bg-emerald-950/60 dark:text-emerald-300"
-                        : "text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800"
-                    }`}
-                  >
-                    <Student size={16} weight="bold" />
-                    <div className="flex-1">
-                      <div className="font-medium">Student</div>
-                      <div className="text-[10px] text-zinc-400">Alex Vance · Request & Track</div>
-                    </div>
-                  </button>
-
-                  <button
-                    type="button"
-                    role="menuitem"
-                    onClick={() => {
-                      switchRole("FACULTY");
-                      setIsRoleDropdownOpen(false);
-                    }}
-                    className={`w-full flex items-center gap-2 px-2.5 py-2 text-left rounded-lg text-xs transition-colors ${
-                      currentUser.role === "FACULTY"
-                        ? "bg-emerald-50 text-[#0F5132] font-semibold dark:bg-emerald-950/60 dark:text-emerald-300"
-                        : "text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800"
-                    }`}
-                  >
-                    <ChalkboardTeacher size={16} weight="bold" />
-                    <div className="flex-1">
-                      <div className="font-medium">Faculty Member</div>
-                      <div className="text-[10px] text-zinc-400">Dr. Evelyn Reed · Priority Queue</div>
-                    </div>
-                  </button>
-
-                  <button
-                    type="button"
-                    role="menuitem"
-                    onClick={() => {
-                      switchRole("ADMINISTRATOR");
-                      setIsRoleDropdownOpen(false);
-                    }}
-                    className={`w-full flex items-center gap-2 px-2.5 py-2 text-left rounded-lg text-xs transition-colors ${
-                      currentUser.role === "ADMINISTRATOR"
-                        ? "bg-emerald-50 text-[#0F5132] font-semibold dark:bg-emerald-950/60 dark:text-emerald-300"
-                        : "text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800"
-                    }`}
-                  >
-                    <ShieldCheck size={16} weight="bold" />
-                    <div className="flex-1">
-                      <div className="font-medium">Facility Administrator</div>
-                      <div className="text-[10px] text-zinc-400">Marcus Holloway · Adjudication</div>
-                    </div>
-                  </button>
-                </div>
-              )}
+            {/* Active Authenticated Role Badge */}
+            <div className="flex items-center gap-2 px-3 py-1.5 rounded-full border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-900 text-xs">
+              <span className="text-[10px] text-zinc-400 uppercase tracking-widest font-mono">Role:</span>
+              <RoleBadge role={currentUser.role} />
             </div>
 
             {/* Notification Bell Icon */}
@@ -550,7 +458,7 @@ export function Navbar({ isTabletCollapsed = true, onToggleTabletCollapse }: Nav
               aria-label={`User Profile: ${currentUser.name}`}
             >
               <div className="w-8 h-8 rounded-full bg-[#0F5132] text-white font-bold flex items-center justify-center text-xs ring-1 ring-emerald-500/40">
-                {currentUser.name.split(" ").map((n) => n[0]).join("")}
+                {getInitials(currentUser.name)}
               </div>
             </button>
           </div>
@@ -585,7 +493,7 @@ export function Navbar({ isTabletCollapsed = true, onToggleTabletCollapse }: Nav
                 </div>
                 <div>
                   <div className="font-bold text-sm text-zinc-900 dark:text-zinc-100">UniSpace</div>
-                  <div className="text-[10px] text-zinc-400">Greenwich Facilities</div>
+                  <div className="text-[10px] text-zinc-400">CHMSU Talisay Facilities</div>
                 </div>
               </div>
 
@@ -661,44 +569,8 @@ export function Navbar({ isTabletCollapsed = true, onToggleTabletCollapse }: Nav
               })}
             </nav>
 
-            {/* Mobile Role Switcher & Sign Out */}
-            <div className="p-4 border-t border-zinc-200 dark:border-zinc-800 bg-zinc-50/80 dark:bg-zinc-900/60 space-y-3">
-              <div className="text-[10px] uppercase font-bold text-zinc-400 tracking-wider">
-                Simulate Role
-              </div>
-              <div className="grid grid-cols-3 gap-1.5">
-                <button
-                  onClick={() => switchRole("STUDENT")}
-                  className={`min-h-[40px] text-xs font-semibold py-1.5 px-2 rounded-lg border text-center transition-colors ${
-                    currentUser.role === "STUDENT"
-                      ? "bg-emerald-600 text-white border-emerald-600"
-                      : "bg-white dark:bg-zinc-800 border-zinc-200 dark:border-zinc-700 text-zinc-700 dark:text-zinc-300"
-                  }`}
-                >
-                  Student
-                </button>
-                <button
-                  onClick={() => switchRole("FACULTY")}
-                  className={`min-h-[40px] text-xs font-semibold py-1.5 px-2 rounded-lg border text-center transition-colors ${
-                    currentUser.role === "FACULTY"
-                      ? "bg-emerald-600 text-white border-emerald-600"
-                      : "bg-white dark:bg-zinc-800 border-zinc-200 dark:border-zinc-700 text-zinc-700 dark:text-zinc-300"
-                  }`}
-                >
-                  Faculty
-                </button>
-                <button
-                  onClick={() => switchRole("ADMINISTRATOR")}
-                  className={`min-h-[40px] text-xs font-semibold py-1.5 px-2 rounded-lg border text-center transition-colors ${
-                    currentUser.role === "ADMINISTRATOR"
-                      ? "bg-emerald-600 text-white border-emerald-600"
-                      : "bg-white dark:bg-zinc-800 border-zinc-200 dark:border-zinc-700 text-zinc-700 dark:text-zinc-300"
-                  }`}
-                >
-                  Admin
-                </button>
-              </div>
-
+            {/* Mobile Sign Out */}
+            <div className="p-4 border-t border-zinc-200 dark:border-zinc-800 bg-zinc-50/80 dark:bg-zinc-900/60">
               <button
                 onClick={() => {
                   setIsMobileDrawerOpen(false);

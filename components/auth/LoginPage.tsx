@@ -2,6 +2,7 @@
 
 import React, { useState } from "react";
 import { useApp } from "../../context/AppContext";
+import { useAuth } from "../../context/AuthContext";
 import { Button } from "../ui/Button";
 import { Input } from "../ui/Input";
 import {
@@ -14,17 +15,16 @@ import {
   Student,
   ChalkboardTeacher,
   ShieldCheck,
-  CheckCircle,
   Shield,
 } from "@phosphor-icons/react";
 
 export function LoginPage() {
   const { login, setAuthView } = useApp();
+  const { authNotice, clearAuthNotice } = useAuth();
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
-  const [rememberMe, setRememberMe] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
 
@@ -37,6 +37,7 @@ export function LoginPage() {
 
     setIsLoading(true);
     setError(null);
+    clearAuthNotice();
 
     const res = await login(email, password);
     setIsLoading(false);
@@ -49,7 +50,10 @@ export function LoginPage() {
     setEmail(demoEmail);
     setPassword(demoPass);
     setError(null);
+    clearAuthNotice();
   };
+
+  const displayError = error || authNotice;
 
   return (
     <div className="min-h-screen flex flex-col justify-center items-center p-4 sm:p-8 bg-[#FAFAFB] dark:bg-[#09090B] font-sans relative">
@@ -82,15 +86,15 @@ export function LoginPage() {
               Sign In to UniSpace
             </h1>
             <p className="text-xs text-zinc-500 max-w-xs mx-auto">
-              Greenwich University Central Facility & Resource Portal
+              Carlos Hilado Memorial State University - Talisay Campus
             </p>
           </div>
 
           {/* Error Notification */}
-          {error && (
+          {displayError && (
             <div className="p-3 bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900 text-rose-800 dark:text-rose-300 rounded-xl text-xs flex items-start gap-2">
               <WarningCircle size={16} weight="fill" className="text-rose-600 shrink-0 mt-0.5" />
-              <span>{error}</span>
+              <span>{displayError}</span>
             </div>
           )}
 
@@ -131,18 +135,8 @@ export function LoginPage() {
               </div>
             </div>
 
-            {/* Remember me & Forgot Password */}
-            <div className="flex items-center justify-between text-xs pt-1 min-h-[44px]">
-              <label className="flex items-center gap-2 cursor-pointer select-none text-zinc-600 dark:text-zinc-400 min-h-[44px]">
-                <input
-                  type="checkbox"
-                  checked={rememberMe}
-                  onChange={(e) => setRememberMe(e.target.checked)}
-                  className="rounded text-[#0F5132] focus:ring-[#0F5132] w-4 h-4"
-                />
-                <span>Remember me</span>
-              </label>
-
+            {/* Forgot Password */}
+            <div className="flex items-center justify-end text-xs pt-1">
               <button
                 type="button"
                 onClick={() => setAuthView("forgot-password")}
@@ -230,4 +224,3 @@ export function LoginPage() {
     </div>
   );
 }
-

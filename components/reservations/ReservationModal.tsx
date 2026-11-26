@@ -3,7 +3,8 @@
 import React, { useState, useEffect } from "react";
 import Image from "next/image";
 import { useApp } from "../../context/AppContext";
-import { Facility, FacilityId, RequestedResource, Reservation } from "../../types";
+import { Facility, FacilityScheduleEntry, RequestedResource } from "../../types";
+import { getLocalYMD } from "../../lib/utils";
 import { Modal } from "../ui/Modal";
 import { Button } from "../ui/Button";
 import { Input, Textarea } from "../ui/Input";
@@ -49,18 +50,13 @@ export function ReservationModal() {
   const [expectedAttendees, setExpectedAttendees] = useState<number>(50);
 
   // Resource Requests
-  const [requestedResources, setRequestedResources] = useState<{ [id: string]: number }>({
-    "res-proj": 0,
-    "res-sound": 0,
-    "res-mic": 0,
-    "res-chair": 0,
-    "res-table": 0,
-  });
+  const [requestedResources, setRequestedResources] = useState<{ [id: string]: number }>({});
 
   const [policyAccepted, setPolicyAccepted] = useState(false);
-  const [conflictReservation, setConflictReservation] = useState<Reservation | null>(null);
+  const [conflictReservation, setConflictReservation] = useState<FacilityScheduleEntry | null>(null);
   const [submittedCode, setSubmittedCode] = useState<string | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Reset or initialize when modal opens
   useEffect(() => {
@@ -69,14 +65,18 @@ export function ReservationModal() {
       setSubmittedCode(null);
       setFormError(null);
       setPolicyAccepted(false);
+      setIsSubmitting(false);
+      setEventName("");
+      setPurpose("");
+      setExpectedAttendees(50);
+      setRequestedResources({});
 
       if (preselectedDate) {
         setDate(preselectedDate);
       } else {
         const tomorrow = new Date();
         tomorrow.setDate(tomorrow.getDate() + 1);
-        const defaultDateStr = tomorrow.toISOString().split("T")[0];
-        setDate(defaultDateStr);
+        setDate(getLocalYMD(tomorrow));
       }
 
       if (preselectedTime) {
@@ -119,10 +119,12 @@ export function ReservationModal() {
     setCurrentStep(2);
   };
 
-  const handleResourceChange = (resId: string, value: number) => {
+  const handleResourceChange = (resId: string, value: number, maxAvailable: number) => {
+    const safeVal = Number.isFinite(value) ? Math.floor(value) : 0;
+    const clamped = Math.min(Math.max(0, safeVal), Math.max(0, maxAvailable));
     setRequestedResources((prev) => ({
       ...prev,
-      [resId]: Math.max(0, value),
+      [resId]: clamped,
     }));
   };
 
@@ -162,6 +164,7 @@ export function ReservationModal() {
   };
 
   const handleSubmit = async () => {
+    if (isSubmitting) return;
     if (!policyAccepted) {
       setFormError("You must acknowledge the University Facility Terms & Safety Policy.");
       return;
@@ -173,34 +176,44 @@ export function ReservationModal() {
     Object.entries(requestedResources).forEach(([resId, qty]) => {
       if (qty > 0) {
         const item = resources.find((r) => r.id === resId);
-        if (item) {
+        if (item && item.condition !== "UNDER_REPAIR") {
           resourceList.push({
             resourceId: resId,
             name: item.name,
-            quantity: qty,
+            quantity: Math.min(qty, item.availableQuantity),
           });
         }
       }
     });
 
-    const result = await createReservation({
-      facilityId: selectedFacility.id,
-      facilityName: selectedFacility.name,
-      eventName,
-      purpose,
-      date,
-      startTime,
-      endTime,
-      expectedAttendees,
-      resources: resourceList,
-    });
+    setIsSubmitting(true);
+    setFormError(null);
+    try {
+      const result = await createReservation({
+        facilityId: selectedFacility.id,
+        facilityName: selectedFacility.name,
+        eventName: eventName.trim(),
+        purpose: purpose.trim(),
+        date,
+        startTime,
+        endTime,
+        expectedAttendees,
+        resources: resourceList,
+      });
 
-    if (result.success && result.reservationCode) {
-      setSubmittedCode(result.reservationCode);
-      setCurrentStep(5); // Success step
-    } else if (result.conflict) {
-      setConflictReservation(result.conflict);
-      setFormError("A conflicting booking was just detected. Please choose another time slot.");
+      if (result.success && result.reservationCode) {
+        setSubmittedCode(result.reservationCode);
+        setCurrentStep(5); // Success step
+      } else if (result.conflict) {
+        setConflictReservation(result.conflict);
+        setFormError("A conflicting booking was just detected. Please choose another time slot.");
+      } else {
+        setFormError(result.error || "Unable to submit reservation request. Please try again.");
+      }
+    } catch (err: any) {
+      setFormError(err?.message || "An unexpected error occurred while submitting.");
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -316,12 +329,13 @@ export function ReservationModal() {
                 <Button
                   variant="primary"
                   size="sm"
-                  disabled={!policyAccepted || !!conflictReservation}
+                  disabled={!policyAccepted || !!conflictReservation || isSubmitting}
+                  loading={isSubmitting}
                   onClick={handleSubmit}
                   icon={<CheckCircle size={15} weight="bold" />}
                   className="min-h-[44px]"
                 >
-                  Submit Reservation Request
+                  {isSubmitting ? "Submitting..." : "Submit Reservation Request"}
                 </Button>
               )}
             </div>
@@ -400,6 +414,7 @@ export function ReservationModal() {
                       src={f.image}
                       alt={f.name}
                       fill
+                      unoptimized={f.image.startsWith("data:")}
                       className="object-cover"
                     />
                   </div>
@@ -538,18 +553,26 @@ export function ReservationModal() {
           <div className="space-y-3">
             {resources.map((res) => {
               const currentQty = requestedResources[res.id] || 0;
+              const isUnavailable = res.condition === "UNDER_REPAIR" || res.availableQuantity <= 0;
 
               return (
                 <div
                   key={res.id}
-                  className="p-3.5 bg-zinc-50 dark:bg-zinc-800/40 rounded-xl border border-zinc-200 dark:border-zinc-800 flex items-center justify-between gap-4 text-xs"
+                  className={`p-3.5 bg-zinc-50 dark:bg-zinc-800/40 rounded-xl border border-zinc-200 dark:border-zinc-800 flex items-center justify-between gap-4 text-xs ${
+                    isUnavailable ? "opacity-60" : ""
+                  }`}
                 >
                   <div className="space-y-0.5">
-                    <div className="font-semibold text-zinc-900 dark:text-zinc-100 flex items-center gap-2">
+                    <div className="font-semibold text-zinc-900 dark:text-zinc-100 flex items-center gap-2 flex-wrap">
                       <span>{res.name}</span>
                       <span className="text-[10px] px-1.5 py-0.2 rounded bg-zinc-200 dark:bg-zinc-700 text-zinc-600 dark:text-zinc-300 font-mono">
                         {res.category}
                       </span>
+                      {res.condition === "UNDER_REPAIR" && (
+                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-rose-100 text-rose-800 font-semibold">
+                          Under Repair
+                        </span>
+                      )}
                     </div>
                     <div className="text-[11px] text-zinc-500">
                       Condition: {res.condition} · Total Campus Stock: {res.totalQuantity} {res.unit} (
@@ -561,8 +584,14 @@ export function ReservationModal() {
                   <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
                     <button
                       type="button"
-                      onClick={() => handleResourceChange(res.id, currentQty - (res.id === "res-chair" ? 10 : 1))}
-                      disabled={currentQty <= 0}
+                      onClick={() =>
+                        handleResourceChange(
+                          res.id,
+                          currentQty - (res.id === "res-chair" ? 10 : 1),
+                          res.availableQuantity
+                        )
+                      }
+                      disabled={isUnavailable || currentQty <= 0}
                       className="min-h-[44px] min-w-[44px] rounded-xl bg-white dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700 flex items-center justify-center font-bold text-base text-zinc-700 dark:text-zinc-200 disabled:opacity-40 hover:bg-zinc-100 dark:hover:bg-zinc-700 transition-colors"
                       aria-label={`Decrease ${res.name}`}
                     >
@@ -572,20 +601,28 @@ export function ReservationModal() {
                       type="number"
                       min={0}
                       max={res.availableQuantity}
+                      disabled={isUnavailable}
                       value={currentQty}
                       aria-label={`Quantity of ${res.name}`}
-                      onChange={(e) => handleResourceChange(res.id, Number(e.target.value))}
-                      className="w-14 sm:w-16 min-h-[44px] text-center rounded-xl border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-800 font-semibold text-xs sm:text-sm text-zinc-900 dark:text-zinc-100"
+                      onChange={(e) =>
+                        handleResourceChange(
+                          res.id,
+                          Number(e.target.value),
+                          res.availableQuantity
+                        )
+                      }
+                      className="w-14 sm:w-16 min-h-[44px] text-center rounded-xl border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-800 font-semibold text-xs sm:text-sm text-zinc-900 dark:text-zinc-100 disabled:opacity-50"
                     />
                     <button
                       type="button"
                       onClick={() =>
                         handleResourceChange(
                           res.id,
-                          currentQty + (res.id === "res-chair" ? 10 : 1)
+                          currentQty + (res.id === "res-chair" ? 10 : 1),
+                          res.availableQuantity
                         )
                       }
-                      disabled={currentQty >= res.availableQuantity}
+                      disabled={isUnavailable || currentQty >= res.availableQuantity}
                       className="min-h-[44px] min-w-[44px] rounded-xl bg-white dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700 flex items-center justify-center font-bold text-base text-zinc-700 dark:text-zinc-200 disabled:opacity-40 hover:bg-zinc-100 dark:hover:bg-zinc-700 transition-colors"
                       aria-label={`Increase ${res.name}`}
                     >
@@ -691,7 +728,7 @@ export function ReservationModal() {
               Reservation Submitted Successfully!
             </h3>
             <p className="text-xs text-zinc-500 max-w-md mx-auto mt-1">
-              Your reservation request has been officially recorded in the Greenwich central database and
+              Your reservation request has been officially recorded in the Carlos Hilado Memorial State University database and
               forwarded to the Facility Administrator.
             </p>
           </div>

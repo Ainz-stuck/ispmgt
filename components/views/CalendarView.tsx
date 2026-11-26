@@ -2,7 +2,8 @@
 
 import React, { useState, useMemo } from "react";
 import { useApp } from "../../context/AppContext";
-import { FacilityId, Reservation } from "../../types";
+import { FacilityId, FacilityScheduleEntry, Reservation } from "../../types";
+import { getLocalYMD } from "../../lib/utils";
 import { StatusBadge } from "../ui/Badge";
 import { Button } from "../ui/Button";
 import { Card, CardHeader, CardBody } from "../ui/Card";
@@ -110,18 +111,24 @@ const OPERATING_HOURS = [
   "21:00",
 ];
 
+type CalendarSlot = FacilityScheduleEntry & {
+  reservationCode?: string;
+  department?: string;
+};
+
 export function CalendarView() {
   const {
     facilities,
     reservations,
+    scheduleSlots,
     openBookingModal,
     setSelectedReservationForReview,
   } = useApp();
 
-  // Navigation State (Anchor: October 2026 for institutional academic term)
-  const [currentYear, setCurrentYear] = useState<number>(2026);
-  const [currentMonth, setCurrentMonth] = useState<number>(9); // 0-indexed: 9 = October
-  const [selectedDate, setSelectedDate] = useState<string>("2026-10-05");
+  // Navigation State initialized to today's local date
+  const [currentYear, setCurrentYear] = useState<number>(() => new Date().getFullYear());
+  const [currentMonth, setCurrentMonth] = useState<number>(() => new Date().getMonth());
+  const [selectedDate, setSelectedDate] = useState<string>(() => getLocalYMD(new Date()));
   const [viewMode, setViewMode] = useState<CalendarViewMode>("MONTH");
 
   // Filters & Search
@@ -136,9 +143,56 @@ export function CalendarView() {
     return `${year}-${mStr}-${dStr}`;
   };
 
-  // Filtered reservations
+  const reservationById = useMemo(() => {
+    const map = new Map<string, Reservation>();
+    for (const r of reservations) {
+      map.set(r.id, r);
+    }
+    return map;
+  }, [reservations]);
+
+  const mergedScheduleSlots = useMemo(() => {
+    const map = new Map<string, CalendarSlot>();
+    for (const slot of scheduleSlots) {
+      const owned = reservationById.get(slot.id);
+      map.set(slot.id, {
+        ...slot,
+        reservationCode: owned?.reservationCode,
+        department: owned?.department,
+      });
+    }
+    for (const r of reservations) {
+      if (r.status !== "REJECTED" && r.status !== "CANCELLED" && !map.has(r.id)) {
+        map.set(r.id, {
+          id: r.id,
+          facilityId: r.facilityId,
+          facilityName: r.facilityName,
+          eventName: r.eventName,
+          userName: r.userName,
+          userRole: r.userRole,
+          date: r.date,
+          startTime: r.startTime,
+          endTime: r.endTime,
+          status: r.status,
+          reservationCode: r.reservationCode,
+          department: r.department,
+          isOwner: true,
+        });
+      }
+    }
+    return Array.from(map.values());
+  }, [scheduleSlots, reservations, reservationById]);
+
+  const openSlotDetails = (slot: CalendarSlot) => {
+    const fullRes = reservationById.get(slot.id);
+    if (fullRes) {
+      setSelectedReservationForReview(fullRes);
+    }
+  };
+
+  // Filtered schedule slots
   const filteredReservations = useMemo(() => {
-    return reservations.filter((r) => {
+    return mergedScheduleSlots.filter((r) => {
       if (r.status === "REJECTED" || r.status === "CANCELLED") return false;
 
       if (selectedFacilityFilter !== "ALL" && r.facilityId !== selectedFacilityFilter) {
@@ -153,8 +207,8 @@ export function CalendarView() {
         const q = searchQuery.toLowerCase();
         const matchName = r.eventName.toLowerCase().includes(q);
         const matchUser = r.userName.toLowerCase().includes(q);
-        const matchCode = r.reservationCode.toLowerCase().includes(q);
-        const matchDept = r.department.toLowerCase().includes(q);
+        const matchCode = r.reservationCode?.toLowerCase().includes(q) ?? false;
+        const matchDept = r.department?.toLowerCase().includes(q) ?? false;
         const matchVenue = r.facilityName.toLowerCase().includes(q);
         if (!matchName && !matchUser && !matchCode && !matchDept && !matchVenue) {
           return false;
@@ -163,7 +217,7 @@ export function CalendarView() {
 
       return true;
     });
-  }, [reservations, selectedFacilityFilter, selectedStatusFilter, searchQuery]);
+  }, [mergedScheduleSlots, selectedFacilityFilter, selectedStatusFilter, searchQuery]);
 
   // Occupancy Analytics Stats
   const occupancyStats = useMemo(() => {
@@ -214,7 +268,7 @@ export function CalendarView() {
         dayNum,
         isCurrentMonth: false,
         dateStr: "",
-        reservations: [] as Reservation[],
+        reservations: [] as CalendarSlot[],
       };
     });
 
@@ -244,7 +298,7 @@ export function CalendarView() {
         dayNum: i + 1,
         isCurrentMonth: false,
         dateStr: "",
-        reservations: [] as Reservation[],
+        reservations: [] as CalendarSlot[],
       };
     });
 
@@ -343,9 +397,10 @@ export function CalendarView() {
   };
 
   const handleToday = () => {
-    setCurrentYear(2026);
-    setCurrentMonth(9);
-    setSelectedDate("2026-10-05");
+    const now = new Date();
+    setCurrentYear(now.getFullYear());
+    setCurrentMonth(now.getMonth());
+    setSelectedDate(getLocalYMD(now));
   };
 
   // Selected date events
@@ -688,8 +743,10 @@ export function CalendarView() {
                 return (
                   <div
                     key={res.id}
-                    onClick={() => setSelectedReservationForReview(res)}
-                    className={`p-4 rounded-2xl border ${theme.border} ${theme.bg} shadow-2xs space-y-3 cursor-pointer`}
+                    onClick={() => openSlotDetails(res)}
+                    className={`p-4 rounded-2xl border ${theme.border} ${theme.bg} shadow-2xs space-y-3 ${
+                      reservationById.has(res.id) ? "cursor-pointer" : ""
+                    }`}
                   >
                     <div className="flex items-start justify-between gap-2">
                       <div>
@@ -697,7 +754,7 @@ export function CalendarView() {
                           {res.eventName}
                         </div>
                         <div className="text-[11px] font-mono text-zinc-400 mt-0.5">
-                          {res.reservationCode}
+                          {res.reservationCode || "Scheduled Slot"}
                         </div>
                       </div>
                       <StatusBadge status={res.status} />
@@ -718,19 +775,21 @@ export function CalendarView() {
 
                     <div className="flex items-center justify-between pt-2 border-t border-black/[0.06] dark:border-white/[0.08] text-xs">
                       <span className="text-[11px] text-zinc-500">
-                        {res.userName} ({res.department})
+                        {res.department ? `${res.userName} (${res.department})` : res.userName}
                       </span>
-                      <Button
-                        variant="secondary"
-                        size="sm"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setSelectedReservationForReview(res);
-                        }}
-                        className="min-h-[38px] text-xs px-3"
-                      >
-                        View Details
-                      </Button>
+                      {reservationById.has(res.id) && (
+                        <Button
+                          variant="secondary"
+                          size="sm"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            openSlotDetails(res);
+                          }}
+                          className="min-h-[38px] text-xs px-3"
+                        >
+                          View Details
+                        </Button>
+                      )}
                     </div>
                   </div>
                 );
@@ -911,8 +970,10 @@ export function CalendarView() {
                       return (
                         <div
                           key={res.id}
-                          onClick={() => setSelectedReservationForReview(res)}
-                          className={`p-3.5 rounded-xl border ${theme.border} ${theme.bg} hover:shadow-xs transition-all cursor-pointer space-y-2 text-xs`}
+                          onClick={() => openSlotDetails(res)}
+                          className={`p-3.5 rounded-xl border ${theme.border} ${theme.bg} hover:shadow-xs transition-all space-y-2 text-xs ${
+                            reservationById.has(res.id) ? "cursor-pointer" : ""
+                          }`}
                         >
                           <div className="flex items-center justify-between gap-2">
                             <span className="font-bold text-zinc-900 dark:text-zinc-100 truncate">
@@ -935,16 +996,18 @@ export function CalendarView() {
                             <div className="flex items-center gap-1.5 text-zinc-500">
                               <Users size={13} className="shrink-0" />
                               <span className="truncate">
-                                {res.userName} ({res.department})
+                                {res.department ? `${res.userName} (${res.department})` : res.userName}
                               </span>
                             </div>
                           </div>
 
                           <div className="pt-2 border-t border-black/[0.06] dark:border-white/[0.08] flex items-center justify-between text-[11px] text-zinc-400">
-                            <span className="font-mono">{res.reservationCode}</span>
-                            <span className="text-[#0F5132] dark:text-emerald-400 font-semibold hover:underline">
-                              Review Details →
-                            </span>
+                            <span className="font-mono">{res.reservationCode || "Scheduled Slot"}</span>
+                            {reservationById.has(res.id) && (
+                              <span className="text-[#0F5132] dark:text-emerald-400 font-semibold hover:underline">
+                                Review Details →
+                              </span>
+                            )}
                           </div>
                         </div>
                       );
@@ -1025,8 +1088,10 @@ export function CalendarView() {
                         <div className="flex-1 min-w-0">
                           {eventInHour ? (
                             <div
-                              onClick={() => setSelectedReservationForReview(eventInHour)}
-                              className={`p-3 rounded-xl border cursor-pointer ${
+                              onClick={() => openSlotDetails(eventInHour)}
+                              className={`p-3 rounded-xl border ${
+                                reservationById.has(eventInHour.id) ? "cursor-pointer" : ""
+                              } ${
                                 VENUE_THEMES[eventInHour.facilityId]?.bg || "bg-emerald-50"
                               } ${VENUE_THEMES[eventInHour.facilityId]?.border || "border-emerald-300"} space-y-1`}
                             >
@@ -1121,8 +1186,10 @@ export function CalendarView() {
                             return (
                               <div
                                 key={`${d.dateStr}-${hour}`}
-                                onClick={() => setSelectedReservationForReview(eventInHour)}
-                                className={`p-1.5 border-r border-zinc-200 dark:border-zinc-800/80 cursor-pointer ${theme.bg} transition-all`}
+                                onClick={() => openSlotDetails(eventInHour)}
+                                className={`p-1.5 border-r border-zinc-200 dark:border-zinc-800/80 ${
+                                  reservationById.has(eventInHour.id) ? "cursor-pointer" : ""
+                                } ${theme.bg} transition-all`}
                                 title={`${eventInHour.eventName} (${eventInHour.facilityName})`}
                               >
                                 {isFirstHour ? (
@@ -1265,8 +1332,10 @@ export function CalendarView() {
                             return (
                               <div
                                 key={`${fac.id}-${hour}`}
-                                onClick={() => setSelectedReservationForReview(eventInSlot)}
-                                className={`p-2 border-r border-zinc-200 dark:border-zinc-800/80 cursor-pointer ${theme.bg} transition-all`}
+                                onClick={() => openSlotDetails(eventInSlot)}
+                                className={`p-2 border-r border-zinc-200 dark:border-zinc-800/80 ${
+                                  reservationById.has(eventInSlot.id) ? "cursor-pointer" : ""
+                                } ${theme.bg} transition-all`}
                               >
                                 {isFirstHour ? (
                                   <div className="space-y-1">
@@ -1280,7 +1349,9 @@ export function CalendarView() {
                                       {eventInSlot.startTime} - {eventInSlot.endTime}
                                     </div>
                                     <div className="text-[10px] text-zinc-500 truncate">
-                                      {eventInSlot.userName} ({eventInSlot.department})
+                                      {eventInSlot.department
+                                        ? `${eventInSlot.userName} (${eventInSlot.department})`
+                                        : eventInSlot.userName}
                                     </div>
                                   </div>
                                 ) : (

@@ -1,11 +1,11 @@
 import { supabase } from "./supabase";
-export { supabase };
 import {
   User,
   UserRole,
   Facility,
   FacilityId,
   FacilityStatus,
+  FacilityScheduleEntry,
   ResourceItem,
   ResourceCondition,
   Reservation,
@@ -14,6 +14,13 @@ import {
   ApprovalLog,
   SystemNotification,
 } from "../types";
+
+function newId(prefix: string): string {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return `${prefix}-${crypto.randomUUID()}`;
+  }
+  return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+}
 
 // ==========================================
 // Mappers (Database snake_case -> App camelCase)
@@ -70,7 +77,12 @@ export function mapResource(r: any): ResourceItem {
   };
 }
 
-export function mapReservation(r: any, requestedResources: RequestedResource[] = [], profile?: any, facility?: any): Reservation {
+export function mapReservation(
+  r: any,
+  requestedResources: RequestedResource[] = [],
+  profile?: any,
+  facility?: any
+): Reservation {
   return {
     id: r.id,
     reservationCode: r.reservation_code,
@@ -112,7 +124,12 @@ export function mapApprovalLog(l: any): ApprovalLog {
   };
 }
 
-export function mapNotification(n: any): SystemNotification {
+export function mapNotification(n: any, readSet?: Set<string>): SystemNotification {
+  const isBroadcast = !n.user_id;
+  const isRead = isBroadcast
+    ? Boolean(readSet?.has(n.id))
+    : Boolean(n.read) || Boolean(readSet?.has(n.id));
+
   return {
     id: n.id,
     userId: n.user_id || "all",
@@ -121,7 +138,7 @@ export function mapNotification(n: any): SystemNotification {
     message: n.message || "",
     type: n.type as any,
     timestamp: n.timestamp ? n.timestamp.replace("T", " ").substring(0, 16) : "",
-    read: !!n.read,
+    read: isRead,
     reservationId: n.reservation_id || undefined,
   };
 }
@@ -152,14 +169,15 @@ export async function fetchAllUsers(): Promise<User[]> {
 }
 
 export async function updateUserProfile(userId: string, data: Partial<User>): Promise<void> {
-  const updates: any = {};
+  const updates: Record<string, unknown> = {};
   if (data.name !== undefined) updates.name = data.name;
   if (data.firstName !== undefined) updates.first_name = data.firstName;
   if (data.lastName !== undefined) updates.last_name = data.lastName;
   if (data.contactNumber !== undefined) updates.contact_number = data.contactNumber;
   if (data.department !== undefined) updates.department = data.department;
   if (data.avatarUrl !== undefined) updates.avatar_url = data.avatarUrl;
-  if (data.status !== undefined) updates.status = data.status;
+
+  if (Object.keys(updates).length === 0) return;
 
   const { error } = await supabase
     .from("profiles")
@@ -169,7 +187,10 @@ export async function updateUserProfile(userId: string, data: Partial<User>): Pr
   if (error) throw error;
 }
 
-export async function toggleUserStatus(userId: string, currentStatus: "ACTIVE" | "DEACTIVATED"): Promise<"ACTIVE" | "DEACTIVATED"> {
+export async function toggleUserStatus(
+  userId: string,
+  currentStatus: "ACTIVE" | "DEACTIVATED"
+): Promise<"ACTIVE" | "DEACTIVATED"> {
   const nextStatus = currentStatus === "ACTIVE" ? "DEACTIVATED" : "ACTIVE";
   const { error } = await supabase
     .from("profiles")
@@ -194,7 +215,10 @@ export async function fetchFacilities(): Promise<Facility[]> {
   return data.map(mapFacility);
 }
 
-export async function updateFacilityStatus(facilityId: FacilityId, status: FacilityStatus): Promise<void> {
+export async function updateFacilityStatus(
+  facilityId: FacilityId,
+  status: FacilityStatus
+): Promise<void> {
   const { error } = await supabase
     .from("facilities")
     .update({ status })
@@ -203,7 +227,10 @@ export async function updateFacilityStatus(facilityId: FacilityId, status: Facil
   if (error) throw error;
 }
 
-export async function updateFacilityCapacity(facilityId: FacilityId, capacity: number): Promise<void> {
+export async function updateFacilityCapacity(
+  facilityId: FacilityId,
+  capacity: number
+): Promise<void> {
   const { error } = await supabase
     .from("facilities")
     .update({ capacity })
@@ -212,8 +239,11 @@ export async function updateFacilityCapacity(facilityId: FacilityId, capacity: n
   if (error) throw error;
 }
 
-export async function updateFacilityDetails(facilityId: FacilityId, data: Partial<Facility>): Promise<void> {
-  const updates: any = {};
+export async function updateFacilityDetails(
+  facilityId: FacilityId,
+  data: Partial<Facility>
+): Promise<void> {
+  const updates: Record<string, unknown> = {};
   if (data.name !== undefined) updates.name = data.name;
   if (data.code !== undefined) updates.code = data.code;
   if (data.description !== undefined) updates.description = data.description;
@@ -252,7 +282,10 @@ export async function fetchResources(): Promise<ResourceItem[]> {
   return data.map(mapResource);
 }
 
-export async function updateResourceCondition(resourceId: string, condition: ResourceCondition): Promise<void> {
+export async function updateResourceCondition(
+  resourceId: string,
+  condition: ResourceCondition
+): Promise<void> {
   const { error } = await supabase
     .from("resources")
     .update({ condition })
@@ -261,12 +294,17 @@ export async function updateResourceCondition(resourceId: string, condition: Res
   if (error) throw error;
 }
 
-export async function updateResourceQuantity(resourceId: string, totalQuantity: number): Promise<void> {
-  const { data: res } = await supabase
+export async function updateResourceQuantity(
+  resourceId: string,
+  totalQuantity: number
+): Promise<void> {
+  const { data: res, error: fetchError } = await supabase
     .from("resources")
     .select("available_quantity")
     .eq("id", resourceId)
     .single();
+
+  if (fetchError) throw fetchError;
 
   const currentAvailable = res?.available_quantity || 0;
   const availableQuantity = Math.min(currentAvailable, totalQuantity);
@@ -283,8 +321,27 @@ export async function updateResourceQuantity(resourceId: string, totalQuantity: 
 }
 
 // ==========================================
-// Reservations & Conflict Checker
+// Reservations, Schedule & Conflict Checker
 // ==========================================
+
+export async function fetchFacilitySchedule(): Promise<FacilityScheduleEntry[]> {
+  const { data, error } = await supabase.rpc("get_facility_schedule");
+  if (error || !data) return [];
+
+  return data.map((row: any) => ({
+    id: row.id,
+    facilityId: row.facility_id as FacilityId,
+    facilityName: row.facility_name,
+    eventName: row.event_name,
+    userName: row.user_name,
+    userRole: row.user_role as UserRole,
+    date: row.date,
+    startTime: row.start_time,
+    endTime: row.end_time,
+    status: row.status as ReservationStatus,
+    isOwner: Boolean(row.is_owner),
+  }));
+}
 
 export async function fetchReservations(): Promise<Reservation[]> {
   const [resData, reqData] = await Promise.all([
@@ -292,9 +349,7 @@ export async function fetchReservations(): Promise<Reservation[]> {
       .from("reservations")
       .select("*, facilities(name), profiles(name, role, email, department)")
       .order("submitted_at", { ascending: false }),
-    supabase
-      .from("requested_resources")
-      .select("*"),
+    supabase.from("requested_resources").select("*"),
   ]);
 
   if (resData.error || !resData.data) return [];
@@ -319,7 +374,14 @@ export async function fetchReservations(): Promise<Reservation[]> {
 }
 
 export function checkTimeConflict(
-  existing: { date: string; startTime: string; endTime: string; status: string; facilityId: string; id: string },
+  existing: {
+    date: string;
+    startTime: string;
+    endTime: string;
+    status: string;
+    facilityId: string;
+    id: string;
+  },
   facilityId: string,
   date: string,
   startTime: string,
@@ -347,26 +409,39 @@ export function checkTimeConflict(
 export async function createReservationRecord(
   data: Omit<
     Reservation,
-    "id" | "reservationCode" | "status" | "submittedAt" | "userId" | "userName" | "userRole" | "userEmail" | "department"
+    | "id"
+    | "reservationCode"
+    | "status"
+    | "submittedAt"
+    | "userId"
+    | "userName"
+    | "userRole"
+    | "userEmail"
+    | "department"
   >,
   currentUser: User,
-  allReservations: Reservation[]
-): Promise<{ success: boolean; conflict?: Reservation; reservationCode?: string; reservation?: Reservation }> {
-  // 1. Conflict Check
-  const conflict = allReservations.find((r) =>
-    checkTimeConflict(r, data.facilityId, data.date, data.startTime, data.endTime)
+  scheduleSlots: FacilityScheduleEntry[]
+): Promise<{
+  success: boolean;
+  conflict?: FacilityScheduleEntry;
+  reservationCode?: string;
+  reservation?: Reservation;
+}> {
+  // 1. Client-side check against campus-wide anonymized schedule slots
+  const conflict = scheduleSlots.find((slot) =>
+    checkTimeConflict(slot, data.facilityId, data.date, data.startTime, data.endTime)
   );
 
   if (conflict) {
     return { success: false, conflict };
   }
 
-  // 2. Generate ID & Code
-  const reservationId = `res-${Date.now()}`;
+  // 2. Generate unique ID & tracking code
+  const reservationId = newId("res");
   const code = `US-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`;
   const submittedAt = new Date().toISOString();
 
-  // 3. Insert into reservations
+  // 3. Insert into reservations (DB trigger check_reservation_overlap also enforces atomically)
   const { error: resError } = await supabase.from("reservations").insert({
     id: reservationId,
     reservation_code: code,
@@ -382,39 +457,50 @@ export async function createReservationRecord(
     submitted_at: submittedAt,
   });
 
-  if (resError) throw resError;
+  if (resError) {
+    if (resError.message?.includes("SCHEDULE_CONFLICT")) {
+      const latestSlots = await fetchFacilitySchedule();
+      const dbConflict = latestSlots.find((slot) =>
+        checkTimeConflict(slot, data.facilityId, data.date, data.startTime, data.endTime)
+      );
+      return { success: false, conflict: dbConflict };
+    }
+    throw resError;
+  }
 
   // 4. Insert requested resources
   if (data.resources && data.resources.length > 0) {
-    const resourceRows = data.resources.map((res, idx) => ({
-      id: `req-${Date.now()}-${idx}`,
+    const resourceRows = data.resources.map((res) => ({
+      id: newId("req"),
       reservation_id: reservationId,
       resource_id: res.resourceId,
       name: res.name,
       quantity: res.quantity,
     }));
 
-    await supabase.from("requested_resources").insert(resourceRows);
+    const { error: reqErr } = await supabase
+      .from("requested_resources")
+      .insert(resourceRows);
+    if (reqErr) throw reqErr;
   }
 
   // 5. Insert approval log
-  await supabase.from("approval_logs").insert({
-    id: `log-${Date.now()}`,
-    reservation_id: reservationId,
-    reservation_code: code,
-    event_name: data.eventName,
-    facility_name: data.facilityName,
-    actor_name: currentUser.name,
-    actor_role: currentUser.role,
+  await insertApprovalLog({
+    reservationId,
+    reservationCode: code,
+    eventName: data.eventName,
+    facilityName: data.facilityName,
+    actorName: currentUser.name,
+    actorRole: currentUser.role,
     action: "SUBMITTED",
     timestamp: submittedAt,
     notes: "Reservation submitted and queued for administrator schedule review.",
   });
 
-  // 6. User notification
-  await supabase.from("notifications").insert([
+  // 6. Insert user and admin notifications
+  const { error: notifErr } = await supabase.from("notifications").insert([
     {
-      id: `notif-${Date.now()}`,
+      id: newId("notif"),
       user_id: currentUser.id,
       title: `Reservation Submitted: ${data.facilityName}`,
       message: `Your booking request ${code} for "${data.eventName}" has been logged and is pending review.`,
@@ -424,7 +510,7 @@ export async function createReservationRecord(
       reservation_id: reservationId,
     },
     {
-      id: `notif-adm-${Date.now()}`,
+      id: newId("notif-adm"),
       user_id: null,
       target_role: "ADMINISTRATOR",
       title: `New Reservation Request: ${data.facilityName}`,
@@ -435,6 +521,7 @@ export async function createReservationRecord(
       reservation_id: reservationId,
     },
   ]);
+  if (notifErr) throw notifErr;
 
   const newReservation: Reservation = {
     ...data,
@@ -470,30 +557,35 @@ export async function approveReservationRecord(
     })
     .eq("id", reservation.id);
 
-  if (error) throw error;
+  if (error) {
+    if (error.message?.includes("SCHEDULE_CONFLICT")) {
+      throw new Error(
+        "Schedule conflict detected with an existing reservation for this venue and time slot."
+      );
+    }
+    throw error;
+  }
 
-  await supabase.from("approval_logs").insert({
-    id: `log-${Date.now()}`,
-    reservation_id: reservation.id,
-    reservation_code: reservation.reservationCode,
-    event_name: reservation.eventName,
-    facility_name: reservation.facilityName,
-    actor_name: actor.name,
-    actor_role: actor.role,
+  await insertApprovalLog({
+    reservationId: reservation.id,
+    reservationCode: reservation.reservationCode,
+    eventName: reservation.eventName,
+    facilityName: reservation.facilityName,
+    actorName: actor.name,
+    actorRole: actor.role,
     action: "APPROVED",
     timestamp: reviewedAt,
     notes: adminNotes,
   });
 
-  await supabase.from("notifications").insert({
-    id: `notif-${Date.now()}`,
-    user_id: reservation.userId,
+  await insertNotification({
+    userId: reservation.userId,
     title: `Reservation Approved: ${reservation.facilityName}`,
     message: `Your booking request ${reservation.reservationCode} for "${reservation.eventName}" on ${reservation.date} has been approved.`,
     type: "RESERVATION_APPROVED",
     timestamp: reviewedAt,
     read: false,
-    reservation_id: reservation.id,
+    reservationId: reservation.id,
   });
 }
 
@@ -516,28 +608,26 @@ export async function rejectReservationRecord(
 
   if (error) throw error;
 
-  await supabase.from("approval_logs").insert({
-    id: `log-${Date.now()}`,
-    reservation_id: reservation.id,
-    reservation_code: reservation.reservationCode,
-    event_name: reservation.eventName,
-    facility_name: reservation.facilityName,
-    actor_name: actor.name,
-    actor_role: actor.role,
+  await insertApprovalLog({
+    reservationId: reservation.id,
+    reservationCode: reservation.reservationCode,
+    eventName: reservation.eventName,
+    facilityName: reservation.facilityName,
+    actorName: actor.name,
+    actorRole: actor.role,
     action: "REJECTED",
     timestamp: reviewedAt,
     notes: `Rejected with reason: ${reason}`,
   });
 
-  await supabase.from("notifications").insert({
-    id: `notif-${Date.now()}`,
-    user_id: reservation.userId,
+  await insertNotification({
+    userId: reservation.userId,
     title: `Reservation Rejected: ${reservation.facilityName}`,
     message: `Your booking request ${reservation.reservationCode} for "${reservation.eventName}" was declined. Reason: ${reason}`,
     type: "RESERVATION_REJECTED",
     timestamp: reviewedAt,
     read: false,
-    reservation_id: reservation.id,
+    reservationId: reservation.id,
   });
 }
 
@@ -564,41 +654,146 @@ export async function fetchApprovalLogs(): Promise<ApprovalLog[]> {
   return data.map(mapApprovalLog);
 }
 
+export async function insertApprovalLog(log: Omit<ApprovalLog, "id">): Promise<ApprovalLog> {
+  const id = newId("log");
+  const timestampIso = log.timestamp || new Date().toISOString();
+
+  const { error } = await supabase.from("approval_logs").insert({
+    id,
+    reservation_id: log.reservationId,
+    reservation_code: log.reservationCode,
+    event_name: log.eventName,
+    facility_name: log.facilityName,
+    actor_name: log.actorName,
+    actor_role: log.actorRole,
+    action: log.action,
+    timestamp: timestampIso,
+    notes: log.notes,
+  });
+
+  if (error) throw error;
+
+  return {
+    ...log,
+    id,
+    timestamp: timestampIso.replace("T", " ").substring(0, 16),
+  };
+}
+
 // ==========================================
-// Notifications
+// Notifications (with per-user read tracking)
 // ==========================================
 
-export async function fetchNotifications(userId: string, userRole?: string): Promise<SystemNotification[]> {
+export async function fetchNotifications(
+  userId: string,
+  userRole?: string
+): Promise<SystemNotification[]> {
   let query = supabase.from("notifications").select("*");
 
   if (userRole === "ADMINISTRATOR") {
-    query = query.or(`user_id.eq.${userId},target_role.eq.ADMINISTRATOR,target_role.eq.ALL,user_id.is.null`);
+    query = query.or(
+      `user_id.eq.${userId},target_role.eq.ADMINISTRATOR,target_role.eq.ALL`
+    );
   } else if (userRole) {
-    query = query.or(`user_id.eq.${userId},target_role.eq.${userRole},target_role.eq.ALL`);
+    query = query.or(
+      `user_id.eq.${userId},target_role.eq.${userRole},target_role.eq.ALL`
+    );
   } else {
     query = query.or(`user_id.eq.${userId},target_role.eq.ALL`);
   }
 
-  const { data, error } = await query.order("timestamp", { ascending: false });
+  const [notifResult, readsResult] = await Promise.all([
+    query.order("timestamp", { ascending: false }),
+    supabase
+      .from("notification_reads")
+      .select("notification_id")
+      .eq("user_id", userId),
+  ]);
 
-  if (error || !data) return [];
-  return data.map(mapNotification);
+  if (notifResult.error || !notifResult.data) return [];
+
+  const readSet = new Set<string>(
+    (readsResult.data || []).map((r: any) => r.notification_id)
+  );
+
+  return notifResult.data.map((n: any) => mapNotification(n, readSet));
 }
 
-export async function markNotificationAsRead(id: string): Promise<void> {
-  const { error } = await supabase
-    .from("notifications")
-    .update({ read: true })
-    .eq("id", id);
+export async function insertNotification(
+  notif: Omit<SystemNotification, "id" | "userId"> & { userId?: string | null }
+): Promise<SystemNotification> {
+  const id = newId("notif");
+  const timestampIso = notif.timestamp || new Date().toISOString();
 
+  const { error } = await supabase.from("notifications").insert({
+    id,
+    user_id: notif.userId ?? null,
+    target_role: notif.targetRole ?? null,
+    title: notif.title,
+    message: notif.message,
+    type: notif.type,
+    timestamp: timestampIso,
+    read: Boolean(notif.read),
+    reservation_id: notif.reservationId ?? null,
+  });
+
+  if (error) throw error;
+
+  return {
+    ...notif,
+    id,
+    userId: notif.userId || "all",
+    timestamp: timestampIso.replace("T", " ").substring(0, 16),
+  };
+}
+
+export async function markNotificationAsRead(
+  notif: SystemNotification,
+  userId: string
+): Promise<void> {
+  if (notif.userId === userId) {
+    const { error } = await supabase
+      .from("notifications")
+      .update({ read: true })
+      .eq("id", notif.id);
+    if (error) throw error;
+    return;
+  }
+
+  // Broadcast or role-targeted notification: record read receipt per user
+  const { error } = await supabase
+    .from("notification_reads")
+    .upsert({ notification_id: notif.id, user_id: userId });
   if (error) throw error;
 }
 
-export async function markAllNotificationsAsRead(userId: string): Promise<void> {
-  const { error } = await supabase
-    .from("notifications")
-    .update({ read: true })
-    .or(`user_id.eq.${userId},target_role.eq.ALL`);
+export async function markAllNotificationsAsRead(
+  userId: string,
+  unreadNotifications: SystemNotification[]
+): Promise<void> {
+  if (unreadNotifications.length === 0) return;
 
-  if (error) throw error;
+  const personalIds = unreadNotifications
+    .filter((n) => n.userId === userId)
+    .map((n) => n.id);
+  const broadcastIds = unreadNotifications
+    .filter((n) => n.userId !== userId)
+    .map((n) => n.id);
+
+  if (personalIds.length > 0) {
+    const { error } = await supabase
+      .from("notifications")
+      .update({ read: true })
+      .in("id", personalIds);
+    if (error) throw error;
+  }
+
+  if (broadcastIds.length > 0) {
+    const rows = broadcastIds.map((notification_id) => ({
+      notification_id,
+      user_id: userId,
+    }));
+    const { error } = await supabase.from("notification_reads").upsert(rows);
+    if (error) throw error;
+  }
 }

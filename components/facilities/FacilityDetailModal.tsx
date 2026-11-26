@@ -53,7 +53,7 @@ export function FacilityDetailModal({
   onReserve,
 }: FacilityDetailModalProps) {
   const {
-    reservations,
+    scheduleSlots,
     currentUser,
     updateFacilityStatus,
     updateFacilityDetails,
@@ -63,6 +63,8 @@ export function FacilityDetailModal({
   const [isEditing, setIsEditing] = useState(false);
   const [editForm, setEditForm] = useState<Facility | null>(null);
   const [saveNotice, setSaveNotice] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
 
   // Dynamic inputs for arrays
   const [newResource, setNewResource] = useState("");
@@ -77,6 +79,8 @@ export function FacilityDetailModal({
       setEditForm({ ...facility });
       setIsEditing(false);
       setSaveNotice(false);
+      setSaveError(null);
+      setIsSaving(false);
     }
   }, [facility, isOpen]);
 
@@ -84,8 +88,8 @@ export function FacilityDetailModal({
 
   const isAdmin = currentUser.role === "ADMINISTRATOR";
 
-  // Filter reservations for this facility
-  const upcomingReservations = reservations
+  // Filter campus schedule slots for this facility
+  const upcomingReservations = scheduleSlots
     .filter((r) => r.facilityId === facility.id && r.status !== "CANCELLED")
     .sort((a, b) => a.date.localeCompare(b.date))
     .slice(0, 4);
@@ -167,9 +171,16 @@ export function FacilityDetailModal({
   };
 
   // Save changes to AppContext
-  const handleSave = () => {
-    if (!editForm) return;
-    updateFacilityDetails(facility.id, editForm);
+  const handleSave = async () => {
+    if (!editForm || isSaving) return;
+    setIsSaving(true);
+    setSaveError(null);
+    const res = await updateFacilityDetails(facility.id, editForm);
+    setIsSaving(false);
+    if (!res.success) {
+      setSaveError(res.error || "Failed to update facility details.");
+      return;
+    }
     setSaveNotice(true);
     setIsEditing(false);
     setTimeout(() => setSaveNotice(false), 4000);
@@ -240,6 +251,7 @@ export function FacilityDetailModal({
                   variant="secondary"
                   size="sm"
                   onClick={handleCancelEdit}
+                  disabled={isSaving}
                   className="flex-1 sm:flex-none min-h-[44px]"
                 >
                   Cancel
@@ -248,10 +260,12 @@ export function FacilityDetailModal({
                   variant="primary"
                   size="sm"
                   onClick={handleSave}
+                  disabled={isSaving}
+                  loading={isSaving}
                   icon={<FloppyDisk size={15} weight="bold" />}
                   className="flex-1 sm:flex-none min-h-[44px] bg-[#0F5132] hover:bg-[#0A3622] text-white"
                 >
-                  Save Changes
+                  {isSaving ? "Saving..." : "Save Changes"}
                 </Button>
               </>
             ) : (
@@ -283,6 +297,22 @@ export function FacilityDetailModal({
         </div>
       }
     >
+      {/* Error Banner */}
+      {saveError && (
+        <div className="mb-4 p-3 rounded-xl bg-rose-50 dark:bg-rose-950/60 border border-rose-300 dark:border-rose-800 text-xs text-rose-800 dark:text-rose-300 flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <WarningCircle size={18} weight="fill" className="text-rose-600 shrink-0" />
+            <span className="font-semibold">{saveError}</span>
+          </div>
+          <button
+            onClick={() => setSaveError(null)}
+            className="text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200"
+          >
+            <X size={14} />
+          </button>
+        </div>
+      )}
+
       {/* Success Notification Banner */}
       {saveNotice && (
         <div className="mb-4 p-3 rounded-xl bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-300 dark:border-emerald-800 text-xs text-[#0F5132] dark:text-emerald-300 flex items-center justify-between gap-2 shadow-xs animate-in fade-in duration-300">
@@ -323,7 +353,7 @@ export function FacilityDetailModal({
           </div>
 
           {/* Section 1: Image & Visual Media Management */}
-          <div className="p-4 rounded-2xl bg-zinc-50 dark:bg-zinc-850 border border-zinc-200 dark:border-zinc-700/80 space-y-4">
+          <div className="p-4 rounded-2xl bg-zinc-50 dark:bg-zinc-800/60 border border-zinc-200 dark:border-zinc-700/80 space-y-4">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2 font-bold text-sm text-zinc-900 dark:text-zinc-100">
                 <ImageIcon size={18} className="text-[#0F5132] dark:text-emerald-400" />
@@ -408,7 +438,7 @@ export function FacilityDetailModal({
           </div>
 
           {/* Section 2: Core Details & Capacity */}
-          <div className="p-4 rounded-2xl bg-zinc-50 dark:bg-zinc-850 border border-zinc-200 dark:border-zinc-700/80 space-y-4">
+          <div className="p-4 rounded-2xl bg-zinc-50 dark:bg-zinc-800/60 border border-zinc-200 dark:border-zinc-700/80 space-y-4">
             <div className="font-bold text-sm text-zinc-900 dark:text-zinc-100">
               Venue Identity & Operational Parameters
             </div>
@@ -534,7 +564,7 @@ export function FacilityDetailModal({
           </div>
 
           {/* Section 3: Assigned Custodian */}
-          <div className="p-4 rounded-2xl bg-zinc-50 dark:bg-zinc-850 border border-zinc-200 dark:border-zinc-700/80 space-y-3">
+          <div className="p-4 rounded-2xl bg-zinc-50 dark:bg-zinc-800/60 border border-zinc-200 dark:border-zinc-700/80 space-y-3">
             <div className="font-bold text-sm text-zinc-900 dark:text-zinc-100">
               Assigned Custodian Details
             </div>
@@ -567,7 +597,7 @@ export function FacilityDetailModal({
           </div>
 
           {/* Section 4: Facility Overview */}
-          <div className="p-4 rounded-2xl bg-zinc-50 dark:bg-zinc-850 border border-zinc-200 dark:border-zinc-700/80 space-y-2">
+          <div className="p-4 rounded-2xl bg-zinc-50 dark:bg-zinc-800/60 border border-zinc-200 dark:border-zinc-700/80 space-y-2">
             <label htmlFor="edit-facility-desc" className="block text-sm font-bold text-zinc-900 dark:text-zinc-100">
               Facility Overview & Description:
             </label>
@@ -581,7 +611,7 @@ export function FacilityDetailModal({
           </div>
 
           {/* Section 5: Included Resources & Equipment */}
-          <div className="p-4 rounded-2xl bg-zinc-50 dark:bg-zinc-850 border border-zinc-200 dark:border-zinc-700/80 space-y-3">
+          <div className="p-4 rounded-2xl bg-zinc-50 dark:bg-zinc-800/60 border border-zinc-200 dark:border-zinc-700/80 space-y-3">
             <div className="font-bold text-sm text-zinc-900 dark:text-zinc-100">
               Included Resources & Equipment
             </div>
@@ -627,7 +657,7 @@ export function FacilityDetailModal({
           </div>
 
           {/* Section 6: Venue Amenities & Technical Capabilities */}
-          <div className="p-4 rounded-2xl bg-zinc-50 dark:bg-zinc-850 border border-zinc-200 dark:border-zinc-700/80 space-y-3">
+          <div className="p-4 rounded-2xl bg-zinc-50 dark:bg-zinc-800/60 border border-zinc-200 dark:border-zinc-700/80 space-y-3">
             <div className="font-bold text-sm text-zinc-900 dark:text-zinc-100">
               Venue Amenities & Technical Capabilities
             </div>
@@ -676,7 +706,7 @@ export function FacilityDetailModal({
           </div>
 
           {/* Section 7: Usage Guidelines & Compliance */}
-          <div className="p-4 rounded-2xl bg-zinc-50 dark:bg-zinc-850 border border-zinc-200 dark:border-zinc-700/80 space-y-3">
+          <div className="p-4 rounded-2xl bg-zinc-50 dark:bg-zinc-800/60 border border-zinc-200 dark:border-zinc-700/80 space-y-3">
             <div className="font-bold text-sm text-zinc-900 dark:text-zinc-100">
               Usage Guidelines & Compliance Rules
             </div>

@@ -21,8 +21,8 @@ export function Footer() {
               Centralized venue allocation, real-time availability, and resource logistics.
             </p>
             <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-950/60 border border-emerald-800 text-emerald-300 text-[11px]">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-              Central System Operational · Greenwich Campus
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse shrink-0" />
+              Central System Operational · CHMSU Talisay
             </div>
           </div>
 
@@ -83,7 +83,7 @@ export function Footer() {
 
         <div className="pt-8 mt-8 border-t border-zinc-800 flex flex-col sm:flex-row items-center justify-between gap-4 text-zinc-500 text-[11px]">
           <div>
-            © 2026 Greenwich University Facility & Resource Management System. All rights reserved.
+            © 2026 Carlos Hilado Memorial State University - Talisay Campus. All rights reserved.
           </div>
           <div className="flex items-center gap-4">
             <span className="hover:text-zinc-400 cursor-pointer">Terms of Facility Use</span>

@@ -13,6 +13,7 @@ import {
   WarningCircle,
   Buildings,
   Check,
+  ShieldCheck,
 } from "@phosphor-icons/react";
 
 export function NotificationsView() {
@@ -45,11 +46,15 @@ export function NotificationsView() {
         return <Clock size={18} weight="fill" className="text-amber-600" />;
       case "FACILITY_UPDATE":
         return <Buildings size={18} weight="fill" className="text-purple-600" />;
+      case "ACCOUNT_SECURITY":
+        return <ShieldCheck size={18} weight="fill" className="text-emerald-600" />;
+      default:
+        return <Bell size={18} weight="fill" className="text-zinc-500" />;
     }
   };
 
-  const handleNotificationClick = (notif: SystemNotification) => {
-    markNotificationAsRead(notif.id);
+  const handleNotificationClick = async (notif: SystemNotification) => {
+    await markNotificationAsRead(notif.id);
     if (notif.reservationId) {
       const targetRes = reservations.find((r) => r.id === notif.reservationId);
       if (targetRes) {
@@ -137,7 +142,7 @@ export function NotificationsView() {
                 }}
                 className={`p-4 flex items-start gap-3.5 transition-colors cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-[#0F5132] ${
                   notif.read
-                    ? "bg-white dark:bg-zinc-900 hover:bg-zinc-50 dark:hover:bg-zinc-850"
+                    ? "bg-white dark:bg-zinc-900 hover:bg-zinc-50 dark:hover:bg-zinc-800/60"
                     : "bg-emerald-50/30 dark:bg-emerald-950/20 hover:bg-emerald-50/50"
                 }`}
               >

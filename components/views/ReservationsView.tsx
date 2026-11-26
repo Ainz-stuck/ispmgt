@@ -28,15 +28,42 @@ export function ReservationsView() {
     setSelectedReservationForReview,
     openBookingModal,
     approveReservation,
-    rejectReservation,
     cancelReservation,
+    checkConflict,
   } = useApp();
 
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("ALL");
   const [roleFilter, setRoleFilter] = useState<string>("ALL");
+  const [busyId, setBusyId] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
 
   const isAdmin = currentUser.role === "ADMINISTRATOR";
+
+  const handleQuickApprove = async (res: Reservation) => {
+    setActionError(null);
+    const conflict = checkConflict(res.facilityId, res.date, res.startTime, res.endTime, res.id);
+    if (conflict) {
+      setSelectedReservationForReview(res);
+      return;
+    }
+    setBusyId(res.id);
+    const result = await approveReservation(res.id);
+    setBusyId(null);
+    if (!result.success) {
+      setActionError(result.error || "Unable to approve reservation.");
+    }
+  };
+
+  const handleCancelReservation = async (resId: string) => {
+    setActionError(null);
+    setBusyId(resId);
+    const result = await cancelReservation(resId);
+    setBusyId(null);
+    if (!result.success) {
+      setActionError(result.error || "Unable to cancel reservation.");
+    }
+  };
 
   // Filter reservations
   const filtered = reservations.filter((r) => {
@@ -82,6 +109,19 @@ export function ReservationsView() {
           New Booking Request
         </Button>
       </div>
+
+      {actionError && (
+        <div className="p-3.5 rounded-xl bg-rose-50 dark:bg-rose-950/30 border border-rose-200 dark:border-rose-800 text-xs text-rose-700 dark:text-rose-300 font-medium flex items-center justify-between gap-2">
+          <span>{actionError}</span>
+          <button
+            type="button"
+            onClick={() => setActionError(null)}
+            className="text-rose-500 hover:text-rose-700 font-semibold shrink-0"
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
 
       {/* Filter and Search Bar */}
       <div className="p-4 bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-200 dark:border-zinc-800 shadow-xs flex flex-col md:flex-row items-stretch md:items-center gap-3">
@@ -215,7 +255,8 @@ export function ReservationsView() {
                     <Button
                       variant="primary"
                       size="sm"
-                      onClick={() => approveReservation(res.id)}
+                      loading={busyId === res.id}
+                      onClick={() => handleQuickApprove(res)}
                       className="min-h-[44px] flex-1 text-xs bg-emerald-700 hover:bg-emerald-800 text-white"
                       icon={<CheckCircle size={16} weight="bold" />}
                     >
@@ -224,6 +265,7 @@ export function ReservationsView() {
                     <Button
                       variant="outline"
                       size="sm"
+                      disabled={busyId === res.id}
                       onClick={() => setSelectedReservationForReview(res)}
                       className="min-h-[44px] px-3 text-xs text-rose-700 border-rose-300 hover:bg-rose-50"
                       icon={<XCircle size={16} weight="bold" />}
@@ -238,7 +280,8 @@ export function ReservationsView() {
                   <Button
                     variant="ghost"
                     size="sm"
-                    onClick={() => cancelReservation(res.id)}
+                    loading={busyId === res.id}
+                    onClick={() => handleCancelReservation(res.id)}
                     className="min-h-[44px] text-xs text-rose-600 hover:bg-rose-50 px-3"
                   >
                     Cancel
@@ -363,7 +406,8 @@ export function ReservationsView() {
                                 <Button
                                   variant="primary"
                                   size="sm"
-                                  onClick={() => approveReservation(res.id)}
+                                  loading={busyId === res.id}
+                                  onClick={() => handleQuickApprove(res)}
                                   className="h-7 text-xs px-2 bg-emerald-700 hover:bg-emerald-800 text-white"
                                   title="One-Click Approve"
                                 >
@@ -372,6 +416,7 @@ export function ReservationsView() {
                                 <Button
                                   variant="outline"
                                   size="sm"
+                                  disabled={busyId === res.id}
                                   onClick={() => setSelectedReservationForReview(res)}
                                   className="h-7 text-xs px-2 text-rose-700 border-rose-300 hover:bg-rose-50"
                                   title="Reject with remarks"
@@ -386,7 +431,8 @@ export function ReservationsView() {
                               <Button
                                 variant="ghost"
                                 size="sm"
-                                onClick={() => cancelReservation(res.id)}
+                                loading={busyId === res.id}
+                                onClick={() => handleCancelReservation(res.id)}
                                 className="h-7 text-xs text-rose-600 hover:bg-rose-50"
                               >
                                 Cancel

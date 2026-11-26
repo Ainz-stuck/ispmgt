@@ -1,7 +1,11 @@
--- 0. Cleanup if needed
+-- 0. Cleanup triggers/functions before recreating
 DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
+DROP TRIGGER IF EXISTS guard_profile_privileged_fields ON public.profiles;
+DROP TRIGGER IF EXISTS check_reservation_overlap ON public.reservations;
 DROP FUNCTION IF EXISTS public.handle_new_user();
-DROP FUNCTION IF EXISTS public.is_admin();
+DROP FUNCTION IF EXISTS public.protect_profile_privileged_fields();
+DROP FUNCTION IF EXISTS public.prevent_reservation_overlap();
+DROP FUNCTION IF EXISTS public.get_facility_schedule();
 
 -- 1. Profiles table
 CREATE TABLE IF NOT EXISTS public.profiles (
@@ -33,14 +37,38 @@ AS $$
   );
 $$;
 
+-- Guard privileged profile fields from non-admin client updates
+CREATE OR REPLACE FUNCTION public.protect_profile_privileged_fields()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+BEGIN
+  IF auth.uid() IS NOT NULL AND NOT public.is_admin() THEN
+    IF NEW.role IS DISTINCT FROM OLD.role
+       OR NEW.status IS DISTINCT FROM OLD.status
+       OR NEW.student_or_employee_id IS DISTINCT FROM OLD.student_or_employee_id THEN
+      RAISE EXCEPTION 'FORBIDDEN: Only administrators can modify role, status, or institutional ID';
+    END IF;
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER guard_profile_privileged_fields
+  BEFORE UPDATE ON public.profiles
+  FOR EACH ROW EXECUTE FUNCTION public.protect_profile_privileged_fields();
+
 -- Enable RLS on profiles
 ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
 
 DROP POLICY IF EXISTS "Profiles are viewable by authenticated users" ON public.profiles;
-CREATE POLICY "Profiles are viewable by authenticated users"
+DROP POLICY IF EXISTS "Users view own profile or admins view all" ON public.profiles;
+CREATE POLICY "Users view own profile or admins view all"
   ON public.profiles FOR SELECT
   TO authenticated
-  USING (true);
+  USING ((SELECT auth.uid()) = id OR public.is_admin());
 
 DROP POLICY IF EXISTS "Users can update own profile" ON public.profiles;
 CREATE POLICY "Users can update own profile"
@@ -53,7 +81,8 @@ DROP POLICY IF EXISTS "Admins can update any profile" ON public.profiles;
 CREATE POLICY "Admins can update any profile"
   ON public.profiles FOR UPDATE
   TO authenticated
-  USING (public.is_admin());
+  USING (public.is_admin())
+  WITH CHECK (public.is_admin());
 
 DROP POLICY IF EXISTS "Users can insert own profile" ON public.profiles;
 CREATE POLICY "Users can insert own profile"
@@ -61,14 +90,22 @@ CREATE POLICY "Users can insert own profile"
   TO authenticated
   WITH CHECK ((SELECT auth.uid()) = id);
 
--- Auto-create profile trigger on signup
+-- Auto-create profile trigger on signup (never trusts ADMINISTRATOR from public signup metadata)
 CREATE OR REPLACE FUNCTION public.handle_new_user()
 RETURNS TRIGGER
 LANGUAGE plpgsql
 SECURITY DEFINER
 SET search_path = ''
 AS $$
+DECLARE
+  assigned_role TEXT;
 BEGIN
+  assigned_role := CASE
+    WHEN (NEW.raw_user_meta_data->>'role') IN ('STUDENT', 'FACULTY')
+      THEN NEW.raw_user_meta_data->>'role'
+    ELSE 'STUDENT'
+  END;
+
   INSERT INTO public.profiles (
     id, name, first_name, last_name, email,
     contact_number, department, role,
@@ -81,7 +118,7 @@ BEGIN
     NEW.email,
     COALESCE(NEW.raw_user_meta_data->>'contact_number', ''),
     COALESCE(NEW.raw_user_meta_data->>'department', ''),
-    COALESCE(NEW.raw_user_meta_data->>'role', 'STUDENT'),
+    assigned_role,
     COALESCE(NEW.raw_user_meta_data->>'student_or_employee_id', ''),
     'ACTIVE'
   )
@@ -92,7 +129,6 @@ BEGIN
     email = EXCLUDED.email,
     contact_number = EXCLUDED.contact_number,
     department = EXCLUDED.department,
-    role = EXCLUDED.role,
     student_or_employee_id = EXCLUDED.student_or_employee_id;
   RETURN NEW;
 END;
@@ -126,15 +162,17 @@ CREATE TABLE IF NOT EXISTS public.facilities (
 ALTER TABLE public.facilities ENABLE ROW LEVEL SECURITY;
 
 DROP POLICY IF EXISTS "Facilities are viewable by authenticated users" ON public.facilities;
-CREATE POLICY "Facilities are viewable by authenticated users"
+DROP POLICY IF EXISTS "Facilities are viewable by everyone" ON public.facilities;
+CREATE POLICY "Facilities are viewable by everyone"
   ON public.facilities FOR SELECT
-  TO authenticated USING (true);
+  TO anon, authenticated USING (true);
 
 DROP POLICY IF EXISTS "Admins can manage facilities" ON public.facilities;
 CREATE POLICY "Admins can manage facilities"
   ON public.facilities FOR ALL
   TO authenticated
-  USING (public.is_admin());
+  USING (public.is_admin())
+  WITH CHECK (public.is_admin());
 
 -- 3. Resources table
 CREATE TABLE IF NOT EXISTS public.resources (
@@ -160,7 +198,8 @@ DROP POLICY IF EXISTS "Admins can manage resources" ON public.resources;
 CREATE POLICY "Admins can manage resources"
   ON public.resources FOR ALL
   TO authenticated
-  USING (public.is_admin());
+  USING (public.is_admin())
+  WITH CHECK (public.is_admin());
 
 -- 4. Reservations table
 CREATE TABLE IF NOT EXISTS public.reservations (
@@ -214,7 +253,77 @@ DROP POLICY IF EXISTS "Admins can update any reservation" ON public.reservations
 CREATE POLICY "Admins can update any reservation"
   ON public.reservations FOR UPDATE
   TO authenticated
-  USING (public.is_admin());
+  USING (public.is_admin())
+  WITH CHECK (public.is_admin());
+
+-- DB-level double-booking prevention trigger
+CREATE OR REPLACE FUNCTION public.prevent_reservation_overlap()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+BEGIN
+  IF NEW.status IN ('PENDING', 'APPROVED') THEN
+    IF EXISTS (
+      SELECT 1 FROM public.reservations r
+      WHERE r.id <> NEW.id
+        AND r.facility_id = NEW.facility_id
+        AND r.date = NEW.date
+        AND r.status IN ('PENDING', 'APPROVED')
+        AND (NEW.start_time < r.end_time AND NEW.end_time > r.start_time)
+    ) THEN
+      RAISE EXCEPTION 'SCHEDULE_CONFLICT: Facility % already has an active reservation overlapping % - % on %',
+        NEW.facility_id, NEW.start_time, NEW.end_time, NEW.date;
+    END IF;
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER check_reservation_overlap
+  BEFORE INSERT OR UPDATE OF facility_id, date, start_time, end_time, status
+  ON public.reservations
+  FOR EACH ROW EXECUTE FUNCTION public.prevent_reservation_overlap();
+
+-- Anonymized schedule RPC so all authenticated users can view occupied slots & check conflicts safely
+CREATE OR REPLACE FUNCTION public.get_facility_schedule()
+RETURNS TABLE (
+  id TEXT,
+  facility_id TEXT,
+  facility_name TEXT,
+  event_name TEXT,
+  user_name TEXT,
+  user_role TEXT,
+  date DATE,
+  start_time TEXT,
+  end_time TEXT,
+  status TEXT,
+  is_owner BOOLEAN
+)
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+  SELECT
+    r.id,
+    r.facility_id,
+    f.name AS facility_name,
+    CASE WHEN r.user_id = (SELECT auth.uid()) OR public.is_admin() THEN r.event_name ELSE 'Reserved Venue Slot' END AS event_name,
+    CASE WHEN r.user_id = (SELECT auth.uid()) OR public.is_admin() THEN p.name ELSE 'Verified Campus Unit' END AS user_name,
+    p.role AS user_role,
+    r.date,
+    r.start_time,
+    r.end_time,
+    r.status,
+    (r.user_id = (SELECT auth.uid())) AS is_owner
+  FROM public.reservations r
+  JOIN public.facilities f ON f.id = r.facility_id
+  JOIN public.profiles p ON p.id = r.user_id
+  WHERE (SELECT auth.uid()) IS NOT NULL
+    AND r.status IN ('PENDING', 'APPROVED');
+$$;
 
 -- 5. Requested Resources table
 CREATE TABLE IF NOT EXISTS public.requested_resources (
@@ -259,7 +368,8 @@ DROP POLICY IF EXISTS "Admins can manage requested resources" ON public.requeste
 CREATE POLICY "Admins can manage requested resources"
   ON public.requested_resources FOR ALL
   TO authenticated
-  USING (public.is_admin());
+  USING (public.is_admin())
+  WITH CHECK (public.is_admin());
 
 -- 6. Approval Logs table
 CREATE TABLE IF NOT EXISTS public.approval_logs (
@@ -291,7 +401,7 @@ CREATE POLICY "Authenticated users can insert logs"
   TO authenticated
   WITH CHECK (true);
 
--- 7. Notifications table
+-- 7. Notifications table & per-user read tracking
 CREATE TABLE IF NOT EXISTS public.notifications (
   id TEXT PRIMARY KEY,
   user_id UUID REFERENCES public.profiles(id) ON DELETE CASCADE,
@@ -330,11 +440,28 @@ DROP POLICY IF EXISTS "Users can update own notifications" ON public.notificatio
 CREATE POLICY "Users can update own notifications"
   ON public.notifications FOR UPDATE
   TO authenticated
-  USING (user_id = (SELECT auth.uid()) OR target_role = 'ALL')
-  WITH CHECK (user_id = (SELECT auth.uid()) OR target_role = 'ALL');
+  USING (user_id = (SELECT auth.uid()))
+  WITH CHECK (user_id = (SELECT auth.uid()));
 
 DROP POLICY IF EXISTS "Admins can update all notifications" ON public.notifications;
 CREATE POLICY "Admins can update all notifications"
   ON public.notifications FOR UPDATE
   TO authenticated
-  USING (public.is_admin());
+  USING (public.is_admin())
+  WITH CHECK (public.is_admin());
+
+CREATE TABLE IF NOT EXISTS public.notification_reads (
+  notification_id TEXT NOT NULL REFERENCES public.notifications(id) ON DELETE CASCADE,
+  user_id UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
+  read_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  PRIMARY KEY (notification_id, user_id)
+);
+
+ALTER TABLE public.notification_reads ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Users manage own notification reads" ON public.notification_reads;
+CREATE POLICY "Users manage own notification reads"
+  ON public.notification_reads FOR ALL
+  TO authenticated
+  USING ((SELECT auth.uid()) = user_id)
+  WITH CHECK ((SELECT auth.uid()) = user_id);

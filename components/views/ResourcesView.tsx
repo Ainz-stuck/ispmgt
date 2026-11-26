@@ -23,6 +23,8 @@ export function ResourcesView() {
   const [newCondition, setNewCondition] = useState<ResourceCondition>("EXCELLENT");
   const [newTotal, setNewTotal] = useState<number>(10);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   const isAdmin = currentUser.role === "ADMINISTRATOR";
 
@@ -30,13 +32,30 @@ export function ResourcesView() {
     setSelectedResource(res);
     setNewCondition(res.condition);
     setNewTotal(res.totalQuantity);
+    setSaveError(null);
     setIsModalOpen(true);
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!selectedResource) return;
-    updateResourceCondition(selectedResource.id, newCondition);
-    updateResourceQuantity(selectedResource.id, newTotal);
+    setIsSaving(true);
+    setSaveError(null);
+    const safeTotal = Math.max(0, Math.floor(Number.isFinite(newTotal) ? newTotal : 0));
+
+    const condResult = await updateResourceCondition(selectedResource.id, newCondition);
+    if (!condResult.success) {
+      setSaveError(condResult.error || "Failed to update equipment condition.");
+      setIsSaving(false);
+      return;
+    }
+
+    const qtyResult = await updateResourceQuantity(selectedResource.id, safeTotal);
+    setIsSaving(false);
+    if (!qtyResult.success) {
+      setSaveError(qtyResult.error || "Failed to update inventory quantity.");
+      return;
+    }
+
     setIsModalOpen(false);
   };
 
@@ -64,7 +83,10 @@ export function ResourcesView() {
       {/* Resource Inventory Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4 gap-4 sm:gap-6">
         {resources.map((item) => {
-          const pct = Math.round((item.availableQuantity / item.totalQuantity) * 100);
+          const pct =
+            item.totalQuantity > 0
+              ? Math.min(100, Math.round((item.availableQuantity / item.totalQuantity) * 100))
+              : 0;
 
           return (
             <Card key={item.id} className="flex flex-col justify-between">
@@ -163,6 +185,7 @@ export function ResourcesView() {
             <Button
               variant="secondary"
               size="sm"
+              disabled={isSaving}
               onClick={() => setIsModalOpen(false)}
               className="min-h-[44px] sm:min-h-0"
             >
@@ -171,6 +194,7 @@ export function ResourcesView() {
             <Button
               variant="primary"
               size="sm"
+              loading={isSaving}
               onClick={handleSave}
               className="min-h-[44px] sm:min-h-0"
             >
@@ -180,6 +204,11 @@ export function ResourcesView() {
         }
       >
         <div className="space-y-4">
+          {saveError && (
+            <div className="p-3 rounded-xl bg-rose-50 dark:bg-rose-950/30 border border-rose-200 dark:border-rose-800 text-xs text-rose-700 dark:text-rose-300 font-medium">
+              {saveError}
+            </div>
+          )}
           <Input
             label="Total Campus Inventory Quantity"
             type="number"

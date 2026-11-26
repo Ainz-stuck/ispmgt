@@ -21,6 +21,18 @@ import {
 
 export function UserManagementView() {
   const { allUsers, toggleUserStatus, currentUser } = useApp();
+  const [busyUserId, setBusyUserId] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
+
+  const handleToggleStatus = async (userId: string) => {
+    setActionError(null);
+    setBusyUserId(userId);
+    const result = await toggleUserStatus(userId);
+    setBusyUserId(null);
+    if (!result.success) {
+      setActionError(result.error || "Unable to update user account status.");
+    }
+  };
 
   const [search, setSearch] = useState("");
   const [roleFilter, setRoleFilter] = useState<string>("ALL");
@@ -60,6 +72,12 @@ export function UserManagementView() {
           Total Users: <strong>{allUsers.length}</strong>
         </div>
       </div>
+
+      {actionError && (
+        <div className="p-3.5 rounded-xl bg-rose-50 dark:bg-rose-950/30 border border-rose-200 dark:border-rose-800 text-xs text-rose-700 dark:text-rose-300 font-medium">
+          {actionError}
+        </div>
+      )}
 
       {/* Filter and Search Bar */}
       <div className="p-4 bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-200 dark:border-zinc-800 shadow-xs flex flex-col md:flex-row items-stretch md:items-center gap-3">
@@ -186,7 +204,8 @@ export function UserManagementView() {
                   <Button
                     variant={isActive ? "secondary" : "primary"}
                     size="sm"
-                    onClick={() => toggleUserStatus(user.id)}
+                    loading={busyUserId === user.id}
+                    onClick={() => handleToggleStatus(user.id)}
                     className="w-full min-h-[44px] text-xs justify-center font-medium mt-1"
                   >
                     {isActive ? "Deactivate Account" : "Activate Account"}
@@ -287,7 +306,8 @@ export function UserManagementView() {
                           <Button
                             variant={isActive ? "secondary" : "primary"}
                             size="sm"
-                            onClick={() => toggleUserStatus(user.id)}
+                            loading={busyUserId === user.id}
+                            onClick={() => handleToggleStatus(user.id)}
                             className="h-8 min-h-[32px] text-xs px-3"
                           >
                             {isActive ? "Deactivate" : "Activate"}

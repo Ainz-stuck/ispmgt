@@ -1,8 +1,7 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { useApp } from "../../context/AppContext";
-import { Reservation } from "../../types";
 import { Modal } from "../ui/Modal";
 import { Button } from "../ui/Button";
 import { StatusBadge, RoleBadge } from "../ui/Badge";
@@ -10,13 +9,9 @@ import { Textarea } from "../ui/Input";
 import {
   Calendar,
   Clock,
-  Users,
-  MapPin,
   CheckCircle,
   XCircle,
   WarningCircle,
-  User,
-  ShieldCheck,
 } from "@phosphor-icons/react";
 
 export function AdminApprovalModal() {
@@ -26,68 +21,107 @@ export function AdminApprovalModal() {
     approveReservation,
     rejectReservation,
     checkConflict,
-    facilities,
   } = useApp();
 
   const [adminNotes, setAdminNotes] = useState("");
   const [rejectionReason, setRejectionReason] = useState("");
   const [isRejecting, setIsRejecting] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
+
+  useEffect(() => {
+    setAdminNotes("");
+    setRejectionReason("");
+    setIsRejecting(false);
+    setActionError(null);
+    setIsSubmitting(false);
+  }, [selectedReservationForReview?.id]);
 
   if (!selectedReservationForReview) return null;
 
   const res = selectedReservationForReview;
-  const facility = facilities.find((f) => f.id === res.facilityId);
 
   // Check if there is another reservation colliding
-  const conflict = checkConflict(res.facilityId, res.date, res.startTime, res.endTime, res.id);
+  const conflict = checkConflict(
+    res.facilityId,
+    res.date,
+    res.startTime,
+    res.endTime,
+    res.id
+  );
 
-  const handleApprove = () => {
-    approveReservation(res.id, adminNotes);
+  const handleApprove = async () => {
+    setIsSubmitting(true);
+    setActionError(null);
+    const result = await approveReservation(res.id, adminNotes);
+    setIsSubmitting(false);
+
+    if (!result.success) {
+      setActionError(result.error || "Failed to approve reservation.");
+      return;
+    }
+
     setSelectedReservationForReview(null);
     setAdminNotes("");
     setIsRejecting(false);
   };
 
-  const handleReject = () => {
+  const handleReject = async () => {
     if (!rejectionReason.trim()) return;
-    rejectReservation(res.id, rejectionReason);
+    setIsSubmitting(true);
+    setActionError(null);
+    const result = await rejectReservation(res.id, rejectionReason.trim());
+    setIsSubmitting(false);
+
+    if (!result.success) {
+      setActionError(result.error || "Failed to reject reservation.");
+      return;
+    }
+
     setSelectedReservationForReview(null);
     setRejectionReason("");
     setIsRejecting(false);
   };
 
+  const handleClose = () => {
+    if (isSubmitting) return;
+    setSelectedReservationForReview(null);
+    setIsRejecting(false);
+    setActionError(null);
+  };
+
   return (
     <Modal
       isOpen={!!selectedReservationForReview}
-      onClose={() => {
-        setSelectedReservationForReview(null);
-        setIsRejecting(false);
-      }}
+      onClose={handleClose}
       title={`Review Reservation: ${res.reservationCode}`}
       subtitle={`${res.facilityName} · Requested by ${res.userName}`}
       maxWidth="2xl"
       footer={
-        <div className="flex items-center justify-between w-full">
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2 w-full">
           <Button
             variant="secondary"
             size="sm"
-            onClick={() => {
-              setSelectedReservationForReview(null);
-              setIsRejecting(false);
-            }}
+            onClick={handleClose}
+            disabled={isSubmitting}
+            className="min-h-[44px] sm:min-h-0"
           >
             Close
           </Button>
 
           {res.status === "PENDING" && (
-            <div className="flex items-center gap-2">
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
               {!isRejecting ? (
                 <>
                   <Button
                     variant="outline"
                     size="sm"
-                    onClick={() => setIsRejecting(true)}
-                    className="text-rose-700 border-rose-300 hover:bg-rose-50"
+                    onClick={() => {
+                      setActionError(null);
+                      setIsRejecting(true);
+                    }}
+                    disabled={isSubmitting}
+                    className="text-rose-700 border-rose-300 hover:bg-rose-50 min-h-[44px] sm:min-h-0"
                     icon={<XCircle size={15} weight="bold" />}
                   >
                     Reject Request
@@ -95,8 +129,10 @@ export function AdminApprovalModal() {
                   <Button
                     variant="primary"
                     size="sm"
-                    disabled={!!conflict}
+                    disabled={!!conflict || isSubmitting}
+                    loading={isSubmitting}
                     onClick={handleApprove}
+                    className="min-h-[44px] sm:min-h-0"
                     icon={<CheckCircle size={15} weight="bold" />}
                   >
                     Approve Reservation
@@ -107,15 +143,19 @@ export function AdminApprovalModal() {
                   <Button
                     variant="ghost"
                     size="sm"
+                    disabled={isSubmitting}
                     onClick={() => setIsRejecting(false)}
+                    className="min-h-[44px] sm:min-h-0"
                   >
                     Cancel
                   </Button>
                   <Button
                     variant="danger"
                     size="sm"
-                    disabled={!rejectionReason.trim()}
+                    disabled={!rejectionReason.trim() || isSubmitting}
+                    loading={isSubmitting}
                     onClick={handleReject}
+                    className="min-h-[44px] sm:min-h-0"
                   >
                     Confirm Rejection
                   </Button>
@@ -127,6 +167,14 @@ export function AdminApprovalModal() {
       }
     >
       <div className="space-y-4 text-xs">
+        {/* Action Error Banner */}
+        {actionError && (
+          <div className="p-3 bg-rose-50 border border-rose-200 text-rose-800 rounded-xl flex items-start gap-2">
+            <WarningCircle size={16} weight="fill" className="text-rose-600 shrink-0 mt-0.5" />
+            <span>{actionError}</span>
+          </div>
+        )}
+
         {/* Status Header Bar */}
         <div className="p-3 bg-zinc-50 dark:bg-zinc-800/60 rounded-xl border border-zinc-200 dark:border-zinc-700 flex items-center justify-between">
           <div className="flex items-center gap-2">
@@ -144,7 +192,7 @@ export function AdminApprovalModal() {
             <WarningCircle size={16} weight="fill" className="text-rose-600 shrink-0 mt-0.5" />
             <div>
               <strong className="block font-semibold">Schedule Overlap Alert:</strong>
-              This request overlaps with approved event &quot;{conflict.eventName}&quot; ({conflict.startTime} - {conflict.endTime}).
+              This request overlaps with event &quot;{conflict.eventName}&quot; ({conflict.startTime} - {conflict.endTime}).
               Approval is locked until the conflict is resolved.
             </div>
           </div>

@@ -46,7 +46,7 @@ export function FacilitiesView() {
             University Facilities Directory
           </h1>
           <p className="text-xs sm:text-sm text-zinc-500 mt-1 max-w-2xl">
-            Certified campus facilities managed by Greenwich Central Operations. Select any venue to
+            Certified campus facilities managed by Carlos Hilado Memorial State University Central Operations. Select any venue to
             inspect floor plans, available equipment, and calendar reservations.
           </p>
         </div>

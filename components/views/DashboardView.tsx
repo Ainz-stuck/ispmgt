@@ -33,6 +33,7 @@ export function DashboardView() {
     currentUser,
     facilities,
     reservations,
+    resources,
     setSelectedFacilityId,
     openBookingModal,
     setActiveTab,
@@ -512,28 +513,31 @@ export function DashboardView() {
               </div>
             </CardHeader>
             <CardBody className="space-y-3.5">
-              {[
-                { name: "Laser Projectors", avail: 9, total: 12, pct: 75 },
-                { name: "Pro Sound Systems", avail: 5, total: 8, pct: 62 },
-                { name: "Wireless Microphones", avail: 18, total: 24, pct: 75 },
-                { name: "Auditorium Chairs", avail: 620, total: 800, pct: 77 },
-                { name: "Collegiate Tables", avail: 110, total: 150, pct: 73 },
-              ].map((res) => (
-                <div key={res.name} className="space-y-1 text-xs">
-                  <div className="flex justify-between text-zinc-700 dark:text-zinc-300">
-                    <span className="font-medium">{res.name}</span>
-                    <span className="text-zinc-500">
-                      <strong>{res.avail}</strong> / {res.total}
-                    </span>
+              {resources.slice(0, 5).map((res) => {
+                const pct =
+                  res.totalQuantity > 0
+                    ? Math.round((res.availableQuantity / res.totalQuantity) * 100)
+                    : 0;
+                return (
+                  <div key={res.id} className="space-y-1 text-xs">
+                    <div className="flex justify-between text-zinc-700 dark:text-zinc-300">
+                      <span className="font-medium">{res.name}</span>
+                      <span className="text-zinc-500">
+                        <strong>{res.availableQuantity}</strong> / {res.totalQuantity}
+                      </span>
+                    </div>
+                    <div className="w-full h-1.5 rounded-full bg-zinc-100 dark:bg-zinc-800 overflow-hidden">
+                      <div
+                        className="h-full rounded-full bg-[#0F5132]"
+                        style={{ width: `${pct}%` }}
+                      />
+                    </div>
                   </div>
-                  <div className="w-full h-1.5 rounded-full bg-zinc-100 dark:bg-zinc-800 overflow-hidden">
-                    <div
-                      className="h-full rounded-full bg-[#0F5132]"
-                      style={{ width: `${res.pct}%` }}
-                    />
-                  </div>
-                </div>
-              ))}
+                );
+              })}
+              {resources.length === 0 && (
+                <p className="text-xs text-zinc-500">No equipment inventory records found.</p>
+              )}
             </CardBody>
           </Card>
         </div>

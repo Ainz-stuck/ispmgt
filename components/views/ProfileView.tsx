@@ -1,9 +1,9 @@
 "use client";
 
 import React, { useState } from "react";
-import Image from "next/image";
 import { useApp } from "../../context/AppContext";
-import { Card, CardHeader, CardBody } from "../ui/Card";
+import { getInitials } from "../../lib/utils";
+import { Card, CardBody } from "../ui/Card";
 import { Button } from "../ui/Button";
 import { RoleBadge } from "../ui/Badge";
 import { Modal } from "../ui/Modal";
@@ -23,7 +23,7 @@ import {
 } from "@phosphor-icons/react";
 
 export function ProfileView() {
-  const { currentUser, updateUserProfile, logout } = useApp();
+  const { currentUser, updateUserProfile, changePassword, logout } = useApp();
 
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [isPasswordModalOpen, setIsPasswordModalOpen] = useState(false);
@@ -32,6 +32,8 @@ export function ProfileView() {
   const [editName, setEditName] = useState(currentUser.name);
   const [editContact, setEditContact] = useState(currentUser.contactNumber || "");
   const [editDept, setEditDept] = useState(currentUser.department);
+  const [profileError, setProfileError] = useState<string | null>(null);
+  const [isSavingProfile, setIsSavingProfile] = useState(false);
 
   // Password Form State
   const [currentPass, setCurrentPass] = useState("");
@@ -39,17 +41,35 @@ export function ProfileView() {
   const [confirmPass, setConfirmPass] = useState("");
   const [passError, setPassError] = useState<string | null>(null);
   const [passSuccess, setPassSuccess] = useState<string | null>(null);
+  const [isUpdatingPass, setIsUpdatingPass] = useState(false);
 
-  const handleSaveProfile = () => {
-    updateUserProfile({
-      name: editName,
-      contactNumber: editContact,
-      department: editDept,
+  const handleSaveProfile = async () => {
+    if (!editName.trim()) {
+      setProfileError("Full name is required.");
+      return;
+    }
+    setIsSavingProfile(true);
+    setProfileError(null);
+    const nameParts = editName.trim().split(/\s+/);
+    const firstName = nameParts[0] || "";
+    const lastName = nameParts.slice(1).join(" ") || "";
+
+    const res = await updateUserProfile({
+      name: editName.trim(),
+      firstName,
+      lastName,
+      contactNumber: editContact.trim(),
+      department: editDept.trim(),
     });
+    setIsSavingProfile(false);
+    if (!res.success) {
+      setProfileError(res.error || "Failed to update profile.");
+      return;
+    }
     setIsEditModalOpen(false);
   };
 
-  const handleChangePassword = (e: React.FormEvent) => {
+  const handleChangePassword = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!currentPass || !newPass) {
       setPassError("All fields are required.");
@@ -64,9 +84,16 @@ export function ProfileView() {
       return;
     }
 
-    // Update password
-    updateUserProfile({ password: newPass });
+    setIsUpdatingPass(true);
     setPassError(null);
+    const res = await changePassword(currentPass, newPass);
+    setIsUpdatingPass(false);
+
+    if (!res.success) {
+      setPassError(res.error || "Failed to update password.");
+      return;
+    }
+
     setPassSuccess("Password updated successfully!");
     setTimeout(() => {
       setIsPasswordModalOpen(false);
@@ -118,7 +145,7 @@ export function ProfileView() {
           <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 -mt-12 mb-6">
             <div className="flex items-end gap-4">
               <div className="w-24 h-24 rounded-2xl bg-white dark:bg-zinc-800 border-4 border-white dark:border-zinc-900 shadow-md flex items-center justify-center text-3xl font-bold text-[#0F5132] dark:text-emerald-400 shrink-0">
-                {currentUser.name.split(" ").map((n) => n[0]).join("")}
+                {getInitials(currentUser.name)}
               </div>
               <div className="space-y-1">
                 <div className="flex items-center gap-2 flex-wrap">
@@ -144,6 +171,7 @@ export function ProfileView() {
                   setEditName(currentUser.name);
                   setEditContact(currentUser.contactNumber || "");
                   setEditDept(currentUser.department);
+                  setProfileError(null);
                   setIsEditModalOpen(true);
                 }}
                 icon={<PencilSimple size={14} weight="bold" />}
@@ -165,7 +193,7 @@ export function ProfileView() {
 
           {/* Profile Details Grid */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-4 border-t border-zinc-100 dark:border-zinc-800 text-xs">
-            <div className="p-3.5 rounded-xl bg-zinc-50 dark:bg-zinc-850/50 border border-zinc-200/80 dark:border-zinc-800 flex items-start gap-3">
+            <div className="p-3.5 rounded-xl bg-zinc-50 dark:bg-zinc-800/50 border border-zinc-200/80 dark:border-zinc-800 flex items-start gap-3">
               <div className="p-2 rounded-lg bg-emerald-100 text-[#0F5132] dark:bg-emerald-950 dark:text-emerald-300">
                 <EnvelopeSimple size={18} weight="bold" />
               </div>
@@ -182,7 +210,7 @@ export function ProfileView() {
               </div>
             </div>
 
-            <div className="p-3.5 rounded-xl bg-zinc-50 dark:bg-zinc-850/50 border border-zinc-200/80 dark:border-zinc-800 flex items-start gap-3">
+            <div className="p-3.5 rounded-xl bg-zinc-50 dark:bg-zinc-800/50 border border-zinc-200/80 dark:border-zinc-800 flex items-start gap-3">
               <div className="p-2 rounded-lg bg-blue-100 text-blue-800 dark:bg-blue-950 dark:text-blue-300">
                 <Phone size={18} weight="bold" />
               </div>
@@ -199,7 +227,7 @@ export function ProfileView() {
               </div>
             </div>
 
-            <div className="p-3.5 rounded-xl bg-zinc-50 dark:bg-zinc-850/50 border border-zinc-200/80 dark:border-zinc-800 flex items-start gap-3">
+            <div className="p-3.5 rounded-xl bg-zinc-50 dark:bg-zinc-800/50 border border-zinc-200/80 dark:border-zinc-800 flex items-start gap-3">
               <div className="p-2 rounded-lg bg-purple-100 text-purple-800 dark:bg-purple-950 dark:text-purple-300">
                 <Buildings size={18} weight="bold" />
               </div>
@@ -216,7 +244,7 @@ export function ProfileView() {
               </div>
             </div>
 
-            <div className="p-3.5 rounded-xl bg-zinc-50 dark:bg-zinc-850/50 border border-zinc-200/80 dark:border-zinc-800 flex items-start gap-3">
+            <div className="p-3.5 rounded-xl bg-zinc-50 dark:bg-zinc-800/50 border border-zinc-200/80 dark:border-zinc-800 flex items-start gap-3">
               <div className="p-2 rounded-lg bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300">
                 <IdentificationBadge size={18} weight="bold" />
               </div>
@@ -228,7 +256,7 @@ export function ProfileView() {
                   {currentUser.studentOrEmployeeId}
                 </span>
                 <span className="text-[10px] text-zinc-500 block mt-0.5">
-                  Issued by Greenwich Registrar
+                  Issued by CHMSU Registrar
                 </span>
               </div>
             </div>
@@ -248,6 +276,7 @@ export function ProfileView() {
             <Button
               variant="secondary"
               size="sm"
+              disabled={isSavingProfile}
               onClick={() => setIsEditModalOpen(false)}
               className="min-h-[44px] sm:min-h-0"
             >
@@ -256,15 +285,23 @@ export function ProfileView() {
             <Button
               variant="primary"
               size="sm"
+              disabled={isSavingProfile}
+              loading={isSavingProfile}
               onClick={handleSaveProfile}
               className="min-h-[44px] sm:min-h-0"
             >
-              Save Changes
+              {isSavingProfile ? "Saving..." : "Save Changes"}
             </Button>
           </div>
         }
       >
         <div className="space-y-4">
+          {profileError && (
+            <div className="p-3 bg-rose-50 border border-rose-200 text-rose-800 rounded-xl text-xs flex items-center gap-2">
+              <WarningCircle size={16} weight="fill" className="text-rose-600 shrink-0" />
+              <span>{profileError}</span>
+            </div>
+          )}
           <Input
             label="Full Name"
             value={editName}
@@ -339,6 +376,7 @@ export function ProfileView() {
               type="button"
               variant="secondary"
               size="sm"
+              disabled={isUpdatingPass}
               onClick={() => setIsPasswordModalOpen(false)}
               className="min-h-[44px] sm:min-h-0"
             >
@@ -348,9 +386,11 @@ export function ProfileView() {
               type="submit"
               variant="primary"
               size="sm"
+              disabled={isUpdatingPass}
+              loading={isUpdatingPass}
               className="min-h-[44px] sm:min-h-0"
             >
-              Update Password
+              {isUpdatingPass ? "Updating..." : "Update Password"}
             </Button>
           </div>
         </form>

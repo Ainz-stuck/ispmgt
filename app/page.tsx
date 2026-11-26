@@ -28,6 +28,7 @@ function MainAppShell() {
 
   const {
     isAuthenticated,
+    isAuthLoading,
     authView,
     activeTab,
     selectedFacilityId,
@@ -36,6 +37,17 @@ function MainAppShell() {
     openBookingModal,
     currentUser,
   } = useApp();
+
+  if (isAuthLoading) {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center bg-[#FAFAFB] dark:bg-[#09090B] gap-3">
+        <div className="w-10 h-10 rounded-2xl bg-[#0F5132] flex items-center justify-center text-white shadow-md animate-pulse font-bold text-sm">
+          US
+        </div>
+        <p className="text-xs font-medium text-zinc-500">Initializing UniSpace session...</p>
+      </div>
+    );
+  }
 
   // If not authenticated or in auth screens, route to authentication modules
   if (!isAuthenticated || authView !== "app") {

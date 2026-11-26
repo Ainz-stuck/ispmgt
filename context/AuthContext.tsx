@@ -2,7 +2,7 @@
 
 import React, { createContext, useContext, useEffect, useState, useCallback } from "react";
 import { supabase } from "../lib/supabase";
-import { fetchProfile } from "../lib/supabase-data";
+import { fetchProfile, insertNotification } from "../lib/supabase-data";
 import { User, UserRole, AuthView } from "../types";
 import type { Session, User as SupabaseUser } from "@supabase/supabase-js";
 
@@ -24,11 +24,24 @@ interface AuthContextType {
   setCurrentUser: React.Dispatch<React.SetStateAction<User | null>>;
   isAuthenticated: boolean;
   isLoading: boolean;
+  isPasswordRecovery: boolean;
+  authNotice: string | null;
+  clearAuthNotice: () => void;
   authView: AuthView;
   setAuthView: (view: AuthView) => void;
-  login: (email: string, password: string) => Promise<{ success: boolean; error?: string; role?: UserRole }>;
+  login: (
+    email: string,
+    password: string
+  ) => Promise<{ success: boolean; error?: string; role?: UserRole }>;
   register: (payload: RegisterPayload) => Promise<{ success: boolean; error?: string }>;
   resetPassword: (email: string) => Promise<{ success: boolean; error?: string }>;
+  completePasswordRecovery: (
+    newPassword: string
+  ) => Promise<{ success: boolean; error?: string }>;
+  changePassword: (
+    currentPassword: string,
+    newPassword: string
+  ) => Promise<{ success: boolean; error?: string }>;
   logout: () => Promise<void>;
   refreshCurrentUser: () => Promise<void>;
 }
@@ -41,7 +54,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
   const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [isPasswordRecovery, setIsPasswordRecovery] = useState<boolean>(false);
+  const [authNotice, setAuthNotice] = useState<string | null>(null);
   const [authView, setAuthView] = useState<AuthView>("landing");
+
+  const clearAuthNotice = useCallback(() => setAuthNotice(null), []);
 
   const loadUserProfile = useCallback(async (userId: string) => {
     try {
@@ -51,9 +68,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           await supabase.auth.signOut();
           setCurrentUser(null);
           setIsAuthenticated(false);
+          setAuthNotice("Account suspended. Please contact the Facility Administrator.");
           setAuthView("login");
-          return { error: "Account suspended. Please contact the Facility Administrator." };
+          return;
         }
+        setAuthNotice(null);
         setCurrentUser(profile);
         setIsAuthenticated(true);
         setAuthView("app");
@@ -70,13 +89,28 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [supabaseUser, loadUserProfile]);
 
   useEffect(() => {
+    let recoveryMode = false;
+
     // 1. Initial session check
     supabase.auth.getSession().then((res: any) => {
-      const session = res?.data?.session;
-      setSession(session);
-      setSupabaseUser(session?.user ?? null);
-      if (session?.user) {
-        loadUserProfile(session.user.id).finally(() => setIsLoading(false));
+      const activeSession = res?.data?.session;
+      setSession(activeSession);
+      setSupabaseUser(activeSession?.user ?? null);
+
+      const isUrlRecovery =
+        typeof window !== "undefined" &&
+        window.location.hash.includes("type=recovery");
+
+      if (isUrlRecovery) {
+        recoveryMode = true;
+        setIsPasswordRecovery(true);
+        setAuthView("forgot-password");
+        setIsLoading(false);
+        return;
+      }
+
+      if (activeSession?.user) {
+        loadUserProfile(activeSession.user.id).finally(() => setIsLoading(false));
       } else {
         setIsLoading(false);
       }
@@ -85,11 +119,26 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     // 2. Auth state change listener
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange(async (_event: any, session: any) => {
-      setSession(session);
-      setSupabaseUser(session?.user ?? null);
-      if (session?.user) {
-        await loadUserProfile(session.user.id);
+    } = supabase.auth.onAuthStateChange(async (event: string, activeSession: any) => {
+      setSession(activeSession);
+      setSupabaseUser(activeSession?.user ?? null);
+
+      if (event === "PASSWORD_RECOVERY") {
+        recoveryMode = true;
+        setIsPasswordRecovery(true);
+        setIsAuthenticated(false);
+        setAuthView("forgot-password");
+        setIsLoading(false);
+        return;
+      }
+
+      if (recoveryMode) {
+        setIsLoading(false);
+        return;
+      }
+
+      if (activeSession?.user) {
+        await loadUserProfile(activeSession.user.id);
       } else {
         setCurrentUser(null);
         setIsAuthenticated(false);
@@ -103,67 +152,101 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [loadUserProfile]);
 
   const login = async (email: string, password: string) => {
-    setIsLoading(true);
+    setAuthNotice(null);
     const { data, error } = await supabase.auth.signInWithPassword({
       email: email.trim().toLowerCase(),
       password,
     });
 
     if (error || !data.user) {
-      setIsLoading(false);
-      return { success: false, error: error?.message || "Invalid credentials. Please try again." };
+      return {
+        success: false,
+        error: error?.message || "Invalid credentials. Please try again.",
+      };
     }
 
-    const profile = await fetchProfile(data.user.id);
+    let profile = await fetchProfile(data.user.id);
     if (!profile) {
-      // Profile might still be generating from trigger, wait a moment
       await new Promise((resolve) => setTimeout(resolve, 500));
-      const retryProfile = await fetchProfile(data.user.id);
-      if (!retryProfile) {
-        setIsLoading(false);
-        return { success: false, error: "Profile not found for this account." };
-      }
-      if (retryProfile.status === "DEACTIVATED") {
-        await supabase.auth.signOut();
-        setIsLoading(false);
-        return { success: false, error: "Account suspended. Please contact the Facility Administrator." };
-      }
-      setCurrentUser(retryProfile);
-      setIsAuthenticated(true);
-      setAuthView("app");
-      setIsLoading(false);
-      return { success: true, role: retryProfile.role };
+      profile = await fetchProfile(data.user.id);
+    }
+
+    if (!profile) {
+      await supabase.auth.signOut();
+      return { success: false, error: "Profile not found for this account." };
     }
 
     if (profile.status === "DEACTIVATED") {
       await supabase.auth.signOut();
-      setIsLoading(false);
-      return { success: false, error: "Account suspended. Please contact the Facility Administrator." };
+      return {
+        success: false,
+        error: "Account suspended. Please contact the Facility Administrator.",
+      };
     }
 
     setCurrentUser(profile);
     setIsAuthenticated(true);
     setAuthView("app");
-    setIsLoading(false);
     return { success: true, role: profile.role };
   };
 
   const register = async (payload: RegisterPayload) => {
-    setIsLoading(true);
+    setAuthNotice(null);
+    const normalizedEmail = payload.email.trim().toLowerCase();
 
-    const validAdminCode = process.env.NEXT_PUBLIC_ADMIN_INVITE_CODE || "UNISPACE-ADMIN-2026";
-    const isAdmin = payload.inviteCode?.trim().toUpperCase() === validAdminCode;
-    const targetRole: UserRole = isAdmin ? "ADMINISTRATOR" : (payload.role as UserRole);
+    // If an admin invite code is provided, validate & create securely on the server
+    if (payload.inviteCode?.trim()) {
+      const response = await fetch("/api/auth/register-admin", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          firstName: payload.firstName.trim(),
+          lastName: payload.lastName.trim(),
+          email: normalizedEmail,
+          contactNumber: payload.contactNumber.trim(),
+          department: payload.department,
+          password: payload.password,
+          inviteCode: payload.inviteCode.trim(),
+        }),
+      });
 
+      const result = await response.json();
+      if (!response.ok) {
+        return {
+          success: false,
+          error: result.error || "Administrator registration failed.",
+        };
+      }
+
+      const signInRes = await login(normalizedEmail, payload.password);
+      if (!signInRes.success) {
+        return { success: false, error: signInRes.error };
+      }
+
+      const { data: userData } = await supabase.auth.getUser();
+      if (userData?.user?.id) {
+        await insertNotification({
+          userId: userData.user.id,
+          title: "Welcome to UniSpace",
+          message: "Your Facility Administrator account is verified and active.",
+          type: "ACCOUNT_SECURITY",
+          timestamp: new Date().toISOString(),
+          read: false,
+        }).catch(() => {});
+      }
+
+      return { success: true };
+    }
+
+    // Standard Student / Faculty signup (role enforced in DB trigger)
+    const targetRole = payload.role === "FACULTY" ? "FACULTY" : "STUDENT";
     const studentOrEmployeeId =
       targetRole === "STUDENT"
         ? `2026-${Math.floor(10000 + Math.random() * 90000)}`
-        : targetRole === "ADMINISTRATOR"
-        ? `ADM-${Math.floor(1000 + Math.random() * 9000)}`
         : `FAC-${Math.floor(1000 + Math.random() * 9000)}`;
 
     const { data, error } = await supabase.auth.signUp({
-      email: payload.email.trim().toLowerCase(),
+      email: normalizedEmail,
       password: payload.password,
       options: {
         data: {
@@ -179,12 +262,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     });
 
     if (error) {
-      setIsLoading(false);
       return { success: false, error: error.message };
     }
 
     if (data.user) {
-      // Small pause for trigger execution
       await new Promise((resolve) => setTimeout(resolve, 600));
       const profile = await fetchProfile(data.user.id);
       if (profile) {
@@ -192,16 +273,30 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setIsAuthenticated(true);
         setAuthView("app");
       }
+
+      await insertNotification({
+        userId: data.user.id,
+        title: "Welcome to UniSpace",
+        message: `Your account as a ${
+          targetRole === "STUDENT" ? "Student" : "Faculty Member"
+        } is verified and active.`,
+        type: "ACCOUNT_SECURITY",
+        timestamp: new Date().toISOString(),
+        read: false,
+      }).catch(() => {});
     }
 
-    setIsLoading(false);
     return { success: true };
   };
 
   const resetPassword = async (email: string) => {
-    const { error } = await supabase.auth.resetPasswordForEmail(email.trim().toLowerCase(), {
-      redirectTo: typeof window !== "undefined" ? `${window.location.origin}/` : undefined,
-    });
+    const { error } = await supabase.auth.resetPasswordForEmail(
+      email.trim().toLowerCase(),
+      {
+        redirectTo:
+          typeof window !== "undefined" ? `${window.location.origin}/` : undefined,
+      }
+    );
 
     if (error) {
       return { success: false, error: error.message };
@@ -209,7 +304,56 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return { success: true };
   };
 
+  const completePasswordRecovery = async (newPassword: string) => {
+    const { data, error } = await supabase.auth.updateUser({
+      password: newPassword,
+    });
+
+    if (error) {
+      return { success: false, error: error.message };
+    }
+
+    setIsPasswordRecovery(false);
+    if (typeof window !== "undefined" && window.location.hash) {
+      window.history.replaceState(null, "", window.location.pathname);
+    }
+
+    if (data?.user) {
+      await loadUserProfile(data.user.id);
+    }
+
+    return { success: true };
+  };
+
+  const changePassword = async (currentPassword: string, newPassword: string) => {
+    const userEmail = currentUser?.email || supabaseUser?.email;
+    if (!userEmail) {
+      return { success: false, error: "No authenticated user email found." };
+    }
+
+    // Verify current password first
+    const { error: verifyError } = await supabase.auth.signInWithPassword({
+      email: userEmail,
+      password: currentPassword,
+    });
+
+    if (verifyError) {
+      return { success: false, error: "Current password is incorrect." };
+    }
+
+    const { error: updateError } = await supabase.auth.updateUser({
+      password: newPassword,
+    });
+
+    if (updateError) {
+      return { success: false, error: updateError.message };
+    }
+
+    return { success: true };
+  };
+
   const logout = async () => {
+    setIsPasswordRecovery(false);
     await supabase.auth.signOut();
     setCurrentUser(null);
     setIsAuthenticated(false);
@@ -225,11 +369,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setCurrentUser,
         isAuthenticated,
         isLoading,
+        isPasswordRecovery,
+        authNotice,
+        clearAuthNotice,
         authView,
         setAuthView,
         login,
         register,
         resetPassword,
+        completePasswordRecovery,
+        changePassword,
         logout,
         refreshCurrentUser,
       }}
@@ -242,7 +391,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 export function useAuth() {
   const context = useContext(AuthContext);
   if (!context) {
-    throw new Error("useAuth must be used within an AuthProvider");
+    throw new Error("useAuth must be used within an AppProvider");
   }
   return context;
 }

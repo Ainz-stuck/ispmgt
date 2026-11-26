@@ -2,6 +2,7 @@
 
 import React, { useState } from "react";
 import { useApp } from "../../context/AppContext";
+import { useAuth } from "../../context/AuthContext";
 import { Button } from "../ui/Button";
 import { Input } from "../ui/Input";
 import {
@@ -15,10 +16,11 @@ import {
 
 export function ForgotPasswordPage() {
   const { resetPassword, setAuthView } = useApp();
+  const { isPasswordRecovery, completePasswordRecovery } = useAuth();
 
-  const [step, setStep] = useState<1 | 2 | 3>(1);
+  const [emailSent, setEmailSent] = useState(false);
+  const [recoveryDone, setRecoveryDone] = useState(false);
   const [email, setEmail] = useState("");
-  const [resetCode, setResetCode] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -38,11 +40,11 @@ export function ForgotPasswordPage() {
     if (!res.success) {
       setError(res.error || "Failed to dispatch password recovery email.");
     } else {
-      setStep(3); // Direct to confirmation
+      setEmailSent(true);
     }
   };
 
-  const handleResetPassword = async (e: React.FormEvent) => {
+  const handleCompleteRecovery = async (e: React.FormEvent) => {
     e.preventDefault();
     if (newPassword.length < 6) {
       setError("New password must be at least 6 characters long.");
@@ -56,12 +58,12 @@ export function ForgotPasswordPage() {
     setIsLoading(true);
     setError(null);
 
-    const res = await resetPassword(email, newPassword);
+    const res = await completePasswordRecovery(newPassword);
     setIsLoading(false);
     if (!res.success) {
-      setError(res.error || "Password reset failed.");
+      setError(res.error || "Password update failed.");
     } else {
-      setStep(3); // Success step
+      setRecoveryDone(true);
     }
   };
 
@@ -92,14 +94,16 @@ export function ForgotPasswordPage() {
             </div>
 
             <h1 className="text-2xl font-bold tracking-tight text-zinc-900 dark:text-zinc-100">
-              Password Recovery
+              {isPasswordRecovery ? "Set New Password" : "Password Recovery"}
             </h1>
             <p className="text-xs text-zinc-500 max-w-xs mx-auto">
-              {step === 1
-                ? "Enter your email to receive a password reset authorization token"
-                : step === 2
-                ? "Authorization token issued! Configure your new password"
-                : "Institutional password successfully updated!"}
+              {recoveryDone
+                ? "Your institutional password has been updated."
+                : isPasswordRecovery
+                ? "Recovery session verified! Enter your new password below."
+                : emailSent
+                ? "Check your institutional inbox to continue."
+                : "Enter your email to receive a password recovery link."}
             </p>
           </div>
 
@@ -111,49 +115,9 @@ export function ForgotPasswordPage() {
             </div>
           )}
 
-          {/* STEP 1: Enter Email */}
-          {step === 1 && (
-            <form onSubmit={handleSendLink} className="space-y-4">
-              <Input
-                label="Institutional Email Address"
-                type="email"
-                placeholder="e.g. alex.vance@university.edu"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                helperText="We will send a 6-digit security reset code to this address."
-                required
-              />
-
-              <Button
-                type="submit"
-                variant="primary"
-                size="lg"
-                pill
-                fullWidth
-                disabled={isLoading}
-                trailingIcon={<PaperPlaneTilt size={18} weight="bold" />}
-                className="mt-2 shadow-lg"
-              >
-                {isLoading ? "Dispatching Reset Code..." : "Receive Reset Link"}
-              </Button>
-            </form>
-          )}
-
-          {/* STEP 2: Enter Code & New Password */}
-          {step === 2 && (
-            <form onSubmit={handleResetPassword} className="space-y-4">
-              <div className="p-3 bg-emerald-50/60 dark:bg-emerald-950/30 rounded-xl border border-emerald-200 dark:border-emerald-800 text-xs text-emerald-900 dark:text-emerald-300">
-                A verification token has been simulated for <strong>{email}</strong>.
-              </div>
-
-              <Input
-                label="Verification Reset Token"
-                placeholder="e.g. 849201"
-                value={resetCode}
-                onChange={(e) => setResetCode(e.target.value)}
-                helperText="Enter 6-digit code or leave default for test bypass"
-              />
-
+          {/* RECOVERY FLOW: User returned from Supabase email magic link */}
+          {isPasswordRecovery && !recoveryDone && (
+            <form onSubmit={handleCompleteRecovery} className="space-y-4">
               <Input
                 label="New Password"
                 type="password"
@@ -180,25 +144,60 @@ export function ForgotPasswordPage() {
                 fullWidth
                 disabled={isLoading}
                 trailingIcon={<CheckCircle size={18} weight="bold" />}
-                className="mt-2 shadow-lg"
+                className="mt-2 shadow-lg min-h-[48px]"
               >
-                {isLoading ? "Updating Password..." : "Create New Password"}
+                {isLoading ? "Updating Password..." : "Save New Password"}
               </Button>
             </form>
           )}
 
-          {/* STEP 3: Success Screen */}
-          {step === 3 && (
+          {/* STEP 1: Enter Email */}
+          {!isPasswordRecovery && !emailSent && !recoveryDone && (
+            <form onSubmit={handleSendLink} className="space-y-4">
+              <Input
+                label="Institutional Email Address"
+                type="email"
+                placeholder="e.g. alex.vance@university.edu"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                helperText="We will send a secure password recovery link to this address."
+                required
+              />
+
+              <Button
+                type="submit"
+                variant="primary"
+                size="lg"
+                pill
+                fullWidth
+                disabled={isLoading}
+                trailingIcon={<PaperPlaneTilt size={18} weight="bold" />}
+                className="mt-2 shadow-lg min-h-[48px]"
+              >
+                {isLoading ? "Dispatching Reset Link..." : "Receive Reset Link"}
+              </Button>
+            </form>
+          )}
+
+          {/* CONFIRMATION SCREEN */}
+          {(emailSent || recoveryDone) && (
             <div className="text-center space-y-4 py-4">
               <div className="w-16 h-16 rounded-full bg-emerald-100 dark:bg-emerald-950/60 text-[#0F5132] dark:text-emerald-300 flex items-center justify-center mx-auto ring-4 ring-emerald-500/20">
                 <CheckCircle size={36} weight="fill" />
               </div>
               <div className="space-y-1">
                 <h3 className="font-bold text-lg text-zinc-900 dark:text-zinc-100">
-                  Password Recovery Link Sent
+                  {recoveryDone ? "Password Updated" : "Password Recovery Link Sent"}
                 </h3>
                 <p className="text-xs text-zinc-500 leading-relaxed max-w-xs mx-auto">
-                  A password recovery link has been dispatched to <strong>{email}</strong>. Please check your inbox and follow the instructions to configure your new institutional credentials.
+                  {recoveryDone ? (
+                    "Your new credentials are active. You can now sign in to UniSpace."
+                  ) : (
+                    <>
+                      A password recovery link has been dispatched to <strong>{email}</strong>. Open
+                      the link in your inbox to set your new password.
+                    </>
+                  )}
                 </p>
               </div>
               <Button
@@ -207,7 +206,7 @@ export function ForgotPasswordPage() {
                 pill
                 fullWidth
                 onClick={() => setAuthView("login")}
-                className="shadow-md"
+                className="shadow-md min-h-[44px]"
               >
                 Return to Login
               </Button>
@@ -218,4 +217,3 @@ export function ForgotPasswordPage() {
     </div>
   );
 }
-

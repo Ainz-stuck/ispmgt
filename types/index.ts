@@ -136,6 +136,7 @@ export interface FacilityScheduleEntry {
   startTime: string;
   endTime: string;
   status: ReservationStatus;
+  isOwner?: boolean;
 }
 
 export type AuthView = "landing" | "login" | "register" | "forgot-password" | "app";

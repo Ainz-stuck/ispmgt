@@ -112,7 +112,7 @@ export function LandingPage() {
             {/* Background Architectural Canvas */}
             <Image
               src="/images/campus_hero.jpg"
-              alt="Greenwich University Campus Architecture"
+              alt="Carlos Hilado Memorial State University Campus Architecture"
               fill
               priority
               className="object-cover opacity-35 mix-blend-luminosity hover:scale-105 transition-transform duration-1000 ease-[cubic-bezier(0.32,0.72,0,1)]"
@@ -184,7 +184,7 @@ export function LandingPage() {
                 </span>
               </div>
               <div className="font-mono text-[11px] text-zinc-400">
-                Greenwich Institutional v2.6
+                CHMSU Talisay · v2.6
               </div>
             </div>
 
