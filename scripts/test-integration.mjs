@@ -53,10 +53,10 @@ async function testIntegration() {
   }
 
   // 5. Test Admin login & RLS visibility
-  console.log("5. Signing in as Admin (Marcus Holloway)...");
+  console.log("5. Signing in as Admin (CHMSU Facility Administrator)...");
   const { data: adminAuth, error: adminAuthError } = await client.auth.signInWithPassword({
-    email: "m.holloway@university.edu",
-    password: "adminpassword",
+    email: "admin@chmsu.edu.ph",
+    password: "ChmsuAdmin#2026",
   });
   if (adminAuthError) throw new Error(`Admin auth failed: ${adminAuthError.message}`);
 
@@ -65,7 +65,7 @@ async function testIntegration() {
     .select("reservation_code, event_name, status");
 
   if (adminResError) throw new Error(`Admin reservations query failed: ${adminResError.message}`);
-  console.log(`✓ Admin Marcus Holloway sees ALL ${adminReservations.length} reservations across the campus.`);
+  console.log(`✓ Admin (${adminAuth.user.email}) sees ALL ${adminReservations.length} reservations across the campus.`);
 
   // 6. Sign out
   await client.auth.signOut();
