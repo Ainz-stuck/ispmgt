@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from "react";
 import { useApp, NavTab } from "../../context/AppContext";
+import { canAccessTab } from "../../lib/rbac";
 import { getInitials } from "../../lib/utils";
 import {
   Buildings,
@@ -44,10 +45,8 @@ export function Navbar({ isTabletCollapsed = true, onToggleTabletCollapse }: Nav
   const [isMobileDrawerOpen, setIsMobileDrawerOpen] = useState(false);
   const [isNotifOpen, setIsNotifOpen] = useState(false);
 
-  const isAdmin = currentUser.role === "ADMINISTRATOR";
-
-  // Navigation Items matching responsive rules
-  const navItems: { id: NavTab; label: string; icon: React.ReactNode; adminOnly?: boolean; badge?: number }[] = [
+  // Navigation Items filtered by RBAC permissions
+  const navItems: { id: NavTab; label: string; icon: React.ReactNode; badge?: number }[] = [
     {
       id: "dashboard",
       label: "Dashboard",
@@ -83,13 +82,11 @@ export function Navbar({ isTabletCollapsed = true, onToggleTabletCollapse }: Nav
       id: "reports",
       label: "Reports",
       icon: <ChartBar size={20} weight={activeTab === "reports" ? "fill" : "regular"} />,
-      adminOnly: true,
     },
     {
       id: "users",
       label: "Users",
       icon: <UserGear size={20} weight={activeTab === "users" ? "fill" : "regular"} />,
-      adminOnly: true,
     },
     {
       id: "profile",
@@ -97,10 +94,9 @@ export function Navbar({ isTabletCollapsed = true, onToggleTabletCollapse }: Nav
       icon: <User size={20} weight={activeTab === "profile" ? "fill" : "regular"} />,
     },
     {
-      id: "architecture",
-      label: "System Spec",
-      icon: <FileCode size={20} weight={activeTab === "architecture" ? "fill" : "regular"} />,
-      adminOnly: true,
+      id: "audit-logs",
+      label: "Audit Logs",
+      icon: <FileCode size={20} weight={activeTab === "audit-logs" ? "fill" : "regular"} />,
     },
   ];
 
@@ -151,12 +147,9 @@ export function Navbar({ isTabletCollapsed = true, onToggleTabletCollapse }: Nav
                 <span className="text-lg font-bold tracking-tight text-zinc-900 dark:text-zinc-50 font-sans">
                   UniSpace
                 </span>
-                <span className="text-[10px] font-semibold uppercase px-1.5 py-0.2 rounded bg-emerald-100 text-[#0F5132] dark:bg-emerald-950 dark:text-emerald-300">
-                  v2.6
-                </span>
               </div>
               <p className="text-[10px] text-zinc-400 truncate">
-                Facility & Resource Ops
+                CHMSU Talisay · Facility Ops
               </p>
             </div>
           </button>
@@ -198,7 +191,7 @@ export function Navbar({ isTabletCollapsed = true, onToggleTabletCollapse }: Nav
           </div>
 
           {navItems.map((item) => {
-            if (item.adminOnly && !isAdmin) return null;
+            if (!canAccessTab(currentUser.role, item.id)) return null;
             const isActive = activeTab === item.id;
 
             return (
@@ -232,7 +225,7 @@ export function Navbar({ isTabletCollapsed = true, onToggleTabletCollapse }: Nav
           })}
         </nav>
 
-        {/* Sidebar Footer: Current User & Quick Role Switcher */}
+        {/* Sidebar Footer: Current User & Account Role */}
         <div className="p-3 border-t border-zinc-200 dark:border-zinc-800 bg-zinc-50/60 dark:bg-zinc-900/60 shrink-0 space-y-2">
           {/* Role Status Tag */}
           <div className={`flex items-center justify-between gap-2 px-2 py-1 ${isTabletCollapsed ? "md:hidden xl:flex" : "flex"}`}>
@@ -301,7 +294,7 @@ export function Navbar({ isTabletCollapsed = true, onToggleTabletCollapse }: Nav
         <div className="h-14 px-6 lg:px-8 flex items-center justify-between gap-4">
           <div className="flex items-center gap-3">
             <h2 className="text-sm font-bold text-zinc-800 dark:text-zinc-200 capitalize">
-              {activeTab === "architecture" ? "System Architecture & Blueprint" : `${activeTab} Overview`}
+              {activeTab === "audit-logs" ? "System Audit Logs" : `${activeTab} Overview`}
             </h2>
           </div>
 
@@ -538,7 +531,7 @@ export function Navbar({ isTabletCollapsed = true, onToggleTabletCollapse }: Nav
             {/* Navigation Links in Mobile Drawer */}
             <nav aria-label="Mobile Navigation" className="flex-1 overflow-y-auto p-3 space-y-1.5 no-scrollbar">
               {navItems.map((item) => {
-                if (item.adminOnly && !isAdmin) return null;
+                if (!canAccessTab(currentUser.role, item.id)) return null;
                 const isActive = activeTab === item.id;
 
                 return (
@@ -661,7 +654,7 @@ export function Navbar({ isTabletCollapsed = true, onToggleTabletCollapse }: Nav
             type="button"
             onClick={() => setIsMobileDrawerOpen(true)}
             className={`relative flex flex-col items-center justify-center flex-1 py-1 min-h-[48px] rounded-xl transition-colors ${
-              isMobileDrawerOpen || activeTab === "reservations" || activeTab === "resources" || activeTab === "reports" || activeTab === "users" || activeTab === "profile" || activeTab === "notifications" || activeTab === "architecture"
+              isMobileDrawerOpen || activeTab === "reservations" || activeTab === "resources" || activeTab === "reports" || activeTab === "users" || activeTab === "profile" || activeTab === "notifications" || activeTab === "audit-logs"
                 ? "text-[#0F5132] dark:text-emerald-400 font-bold"
                 : "text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-300"
             }`}

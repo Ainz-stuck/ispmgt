@@ -5,6 +5,12 @@ import Image from "next/image";
 import { useApp } from "../../context/AppContext";
 import { Facility, FacilityScheduleEntry, RequestedResource } from "../../types";
 import { getLocalYMD } from "../../lib/utils";
+import {
+  getMinReservationDate,
+  hasPermission,
+  STUDENT_MIN_LEAD_DAYS,
+  validateReservationLeadTime,
+} from "../../lib/rbac";
 import { Modal } from "../ui/Modal";
 import { Button } from "../ui/Button";
 import { Input, Textarea } from "../ui/Input";
@@ -58,6 +64,9 @@ export function ReservationModal() {
   const [formError, setFormError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
+  const minAllowedDate = getMinReservationDate(currentUser.role);
+  const canBypassLeadTime = hasPermission(currentUser.role, "RESERVATION_BYPASS_LEAD_TIME");
+
   // Reset or initialize when modal opens
   useEffect(() => {
     if (isBookingModalOpen) {
@@ -71,12 +80,11 @@ export function ReservationModal() {
       setExpectedAttendees(50);
       setRequestedResources({});
 
-      if (preselectedDate) {
+      const roleMinDate = getMinReservationDate(currentUser.role);
+      if (preselectedDate && preselectedDate >= roleMinDate) {
         setDate(preselectedDate);
       } else {
-        const tomorrow = new Date();
-        tomorrow.setDate(tomorrow.getDate() + 1);
-        setDate(getLocalYMD(tomorrow));
+        setDate(roleMinDate);
       }
 
       if (preselectedTime) {
@@ -99,7 +107,7 @@ export function ReservationModal() {
         setSelectedFacility(null);
       }
     }
-  }, [isBookingModalOpen, preselectedFacilityId, preselectedDate, preselectedTime, facilities]);
+  }, [isBookingModalOpen, preselectedFacilityId, preselectedDate, preselectedTime, facilities, currentUser.role]);
 
   // Live Conflict Detection when step 2 values change
   useEffect(() => {
@@ -137,8 +145,9 @@ export function ReservationModal() {
       setFormError("Event purpose and academic justification are required.");
       return false;
     }
-    if (!date) {
-      setFormError("Please select a reservation date.");
+    const leadCheck = validateReservationLeadTime(currentUser.role, date);
+    if (!leadCheck.valid) {
+      setFormError(leadCheck.message || "Invalid reservation date.");
       return false;
     }
     if (!startTime || !endTime) {
@@ -476,6 +485,22 @@ export function ReservationModal() {
             </div>
           )}
 
+          {/* Role Booking Policy Notice */}
+          <div
+            className={`p-3 rounded-xl border text-xs flex items-start gap-2 ${
+              canBypassLeadTime
+                ? "bg-purple-50/70 dark:bg-purple-950/30 border-purple-200 dark:border-purple-800 text-purple-900 dark:text-purple-200"
+                : "bg-emerald-50/70 dark:bg-emerald-950/30 border-emerald-200 dark:border-emerald-800 text-emerald-900 dark:text-emerald-200"
+            }`}
+          >
+            <ShieldCheck size={16} weight="fill" className="shrink-0 mt-0.5" />
+            <span>
+              {canBypassLeadTime
+                ? `Priority Access (${currentUser.role === "FACULTY" ? "Faculty & Staff" : "Administrator"}): Same-day and next-day requests are enabled (${minAllowedDate} or later).`
+                : `Student Lead-Time Policy: Bookings must be submitted at least ${STUDENT_MIN_LEAD_DAYS} days in advance (earliest date: ${minAllowedDate}).`}
+            </span>
+          </div>
+
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="sm:col-span-2">
               <Input
@@ -501,8 +526,14 @@ export function ReservationModal() {
               <Input
                 label="Date of Reservation"
                 type="date"
+                min={minAllowedDate}
                 value={date}
                 onChange={(e) => setDate(e.target.value)}
+                helperText={
+                  canBypassLeadTime
+                    ? `Earliest available: ${minAllowedDate}`
+                    : `${STUDENT_MIN_LEAD_DAYS}-day student lead time applies (min: ${minAllowedDate})`
+                }
                 required
               />
             </div>

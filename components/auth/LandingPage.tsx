@@ -58,7 +58,7 @@ export function LandingPage() {
                   UniSpace
                 </span>
                 <span className="hidden sm:inline-flex text-[9px] font-mono uppercase px-2 py-0.5 rounded-full bg-emerald-50 text-[#0F5132] dark:bg-emerald-950 dark:text-emerald-300 ring-1 ring-emerald-500/20 font-semibold tracking-wider">
-                  v2.6
+                  CHMSU Talisay
                 </span>
               </div>
             </div>
@@ -184,7 +184,7 @@ export function LandingPage() {
                 </span>
               </div>
               <div className="font-mono text-[11px] text-zinc-400">
-                CHMSU Talisay · v2.6
+                CHMSU Talisay · Official Portal
               </div>
             </div>
 
@@ -222,7 +222,7 @@ export function LandingPage() {
                 </h3>
                 <p className="text-sm text-zinc-600 dark:text-zinc-400 leading-relaxed max-w-lg">
                   Browse 6 dedicated campus venues with detailed floor capacities, acoustic specifications,
-                  custodian contacts, and real-time operational availability. Students and faculty can reserve spaces with immediate validation.
+                  custodian contacts, and real-time operational availability. Students and faculty & staff can reserve spaces with immediate validation.
                 </p>
               </div>
 
@@ -295,7 +295,7 @@ export function LandingPage() {
                 </h3>
                 <p className="text-sm text-zinc-600 dark:text-zinc-400 leading-relaxed">
                   Instant alerts for submission receipts, administrative approvals, rejection remarks,
-                  and emergency maintenance notices sent directly to students and faculty.
+                  and emergency maintenance notices sent directly to students and faculty & staff.
                 </p>
               </div>
 

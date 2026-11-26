@@ -2,6 +2,7 @@
 
 import React, { useState } from "react";
 import { useApp } from "../../context/AppContext";
+import { hasPermission } from "../../lib/rbac";
 import { User, UserRole } from "../../types";
 import { Card, CardHeader, CardBody } from "../ui/Card";
 import { RoleBadge } from "../ui/Badge";
@@ -20,9 +21,11 @@ import {
 } from "@phosphor-icons/react";
 
 export function UserManagementView() {
-  const { allUsers, toggleUserStatus, currentUser } = useApp();
+  const { allUsers, toggleUserStatus, updateUserRole, currentUser, setActiveTab } = useApp();
   const [busyUserId, setBusyUserId] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+
+  const canManageUsers = hasPermission(currentUser.role, "USERS_MANAGE");
 
   const handleToggleStatus = async (userId: string) => {
     setActionError(null);
@@ -31,6 +34,16 @@ export function UserManagementView() {
     setBusyUserId(null);
     if (!result.success) {
       setActionError(result.error || "Unable to update user account status.");
+    }
+  };
+
+  const handleRoleChange = async (userId: string, nextRole: UserRole) => {
+    setActionError(null);
+    setBusyUserId(userId);
+    const result = await updateUserRole(userId, nextRole);
+    setBusyUserId(null);
+    if (!result.success) {
+      setActionError(result.error || "Unable to update user role.");
     }
   };
 
@@ -51,6 +64,27 @@ export function UserManagementView() {
     return matchesSearch && matchesRole && matchesStatus;
   });
 
+  if (!canManageUsers) {
+    return (
+      <div className="min-h-[380px] flex flex-col items-center justify-center text-center p-8 bg-white dark:bg-zinc-900 rounded-3xl border border-zinc-200 dark:border-zinc-800 shadow-sm space-y-4 my-8">
+        <div className="w-14 h-14 rounded-2xl bg-rose-50 dark:bg-rose-950/60 text-rose-600 flex items-center justify-center ring-1 ring-rose-500/20">
+          <ShieldCheck size={28} weight="bold" />
+        </div>
+        <div>
+          <h2 className="text-lg font-bold text-zinc-900 dark:text-zinc-100">
+            Restricted Access: Facility Administrator Only
+          </h2>
+          <p className="text-xs text-zinc-500 max-w-md mt-1">
+            User role and access governance is restricted to authorized Facility Administrators.
+          </p>
+        </div>
+        <Button onClick={() => setActiveTab("dashboard")} size="sm" pill>
+          Return to Dashboard
+        </Button>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6 pb-16 w-full">
       {/* Title */}
@@ -64,7 +98,7 @@ export function UserManagementView() {
             User Access & Directory Management
           </h1>
           <p className="text-xs sm:text-sm text-zinc-500 mt-0.5">
-            Audit registered student and faculty accounts, configure access privileges, and toggle activation status
+            Audit registered Student, Faculty &amp; Staff, and Administrator accounts, assign institutional roles, and manage access status
           </p>
         </div>
 
@@ -88,8 +122,8 @@ export function UserManagementView() {
           />
           <input
             type="text"
-            placeholder="Search by user name, email, department, or student ID..."
-            aria-label="Search users by name, email, department, or student ID"
+            placeholder="Search by name, email, department, or student/employee ID..."
+            aria-label="Search users by name, email, department, or student/employee ID"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             className="w-full min-h-[44px] h-11 sm:h-10 pl-10 pr-4 text-xs rounded-xl border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-400 focus:outline-none focus:ring-2 focus:ring-[#0F5132]"
@@ -105,7 +139,7 @@ export function UserManagementView() {
           >
             <option value="ALL">All Roles</option>
             <option value="STUDENT">Students Only</option>
-            <option value="FACULTY">Faculty Members</option>
+            <option value="FACULTY">Faculty &amp; Staff</option>
             <option value="ADMINISTRATOR">Administrators</option>
           </select>
 
@@ -199,20 +233,38 @@ export function UserManagementView() {
                   )}
                 </div>
 
-                {/* Action button */}
-                {user.role !== "ADMINISTRATOR" ? (
-                  <Button
-                    variant={isActive ? "secondary" : "primary"}
-                    size="sm"
-                    loading={busyUserId === user.id}
-                    onClick={() => handleToggleStatus(user.id)}
-                    className="w-full min-h-[44px] text-xs justify-center font-medium mt-1"
-                  >
-                    {isActive ? "Deactivate Account" : "Activate Account"}
-                  </Button>
+                {/* Action controls */}
+                {!isCurrent ? (
+                  <div className="space-y-2 pt-1">
+                    <div>
+                      <label className="text-[10px] uppercase font-bold text-zinc-400 block mb-1">
+                        Assign Role
+                      </label>
+                      <select
+                        value={user.role}
+                        disabled={busyUserId === user.id}
+                        aria-label={`Assign role for ${user.name}`}
+                        onChange={(e) => handleRoleChange(user.id, e.target.value as UserRole)}
+                        className="w-full min-h-[44px] h-11 px-3 text-xs rounded-xl border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-[#0F5132]"
+                      >
+                        <option value="STUDENT">Student</option>
+                        <option value="FACULTY">Faculty &amp; Staff</option>
+                        <option value="ADMINISTRATOR">Administrator</option>
+                      </select>
+                    </div>
+                    <Button
+                      variant={isActive ? "secondary" : "primary"}
+                      size="sm"
+                      loading={busyUserId === user.id}
+                      onClick={() => handleToggleStatus(user.id)}
+                      className="w-full min-h-[44px] text-xs justify-center font-medium"
+                    >
+                      {isActive ? "Deactivate Account" : "Activate Account"}
+                    </Button>
+                  </div>
                 ) : (
                   <div className="text-center py-2 text-[11px] text-zinc-400 italic bg-zinc-50 dark:bg-zinc-800/40 rounded-xl">
-                    Protected Administrator Account
+                    Current Admin Session (Self-Modification Locked)
                   </div>
                 )}
               </div>
@@ -267,9 +319,23 @@ export function UserManagementView() {
                         {user.email}
                       </td>
 
-                      {/* Role */}
+                      {/* Role Assignment */}
                       <td className="px-4 py-3.5">
-                        <RoleBadge role={user.role} />
+                        {isCurrent ? (
+                          <RoleBadge role={user.role} />
+                        ) : (
+                          <select
+                            value={user.role}
+                            disabled={busyUserId === user.id}
+                            aria-label={`Assign role for ${user.name}`}
+                            onChange={(e) => handleRoleChange(user.id, e.target.value as UserRole)}
+                            className="h-8 px-2.5 text-xs font-medium rounded-lg border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-[#0F5132]"
+                          >
+                            <option value="STUDENT">Student</option>
+                            <option value="FACULTY">Faculty &amp; Staff</option>
+                            <option value="ADMINISTRATOR">Administrator</option>
+                          </select>
+                        )}
                       </td>
 
                       {/* Department */}
@@ -302,7 +368,7 @@ export function UserManagementView() {
 
                       {/* Actions */}
                       <td className="px-5 py-3.5 text-right">
-                        {user.role !== "ADMINISTRATOR" ? (
+                        {!isCurrent ? (
                           <Button
                             variant={isActive ? "secondary" : "primary"}
                             size="sm"
@@ -313,7 +379,7 @@ export function UserManagementView() {
                             {isActive ? "Deactivate" : "Activate"}
                           </Button>
                         ) : (
-                          <span className="text-[11px] text-zinc-400 italic">Protected</span>
+                          <span className="text-[11px] text-zinc-400 italic">Current Session</span>
                         )}
                       </td>
                     </tr>

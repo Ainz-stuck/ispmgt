@@ -12,9 +12,7 @@ import {
   SignIn,
   ArrowLeft,
   WarningCircle,
-  Student,
-  ChalkboardTeacher,
-  ShieldCheck,
+  CheckCircle,
   Shield,
 } from "@phosphor-icons/react";
 
@@ -46,14 +44,8 @@ export function LoginPage() {
     }
   };
 
-  const fillQuickCredentials = (demoEmail: string, demoPass: string) => {
-    setEmail(demoEmail);
-    setPassword(demoPass);
-    setError(null);
-    clearAuthNotice();
-  };
-
-  const displayError = error || authNotice;
+  const isPositiveNotice = !error && Boolean(authNotice?.startsWith("Registration"));
+  const displayError = error || (!isPositiveNotice ? authNotice : null);
 
   return (
     <div className="min-h-screen flex flex-col justify-center items-center p-4 sm:p-8 bg-[#FAFAFB] dark:bg-[#09090B] font-sans relative">
@@ -90,6 +82,14 @@ export function LoginPage() {
             </p>
           </div>
 
+          {/* Verification Notice */}
+          {isPositiveNotice && authNotice && (
+            <div className="p-3 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-900 text-emerald-800 dark:text-emerald-300 rounded-xl text-xs flex items-start gap-2">
+              <CheckCircle size={16} weight="fill" className="text-emerald-600 shrink-0 mt-0.5" />
+              <span>{authNotice}</span>
+            </div>
+          )}
+
           {/* Error Notification */}
           {displayError && (
             <div className="p-3 bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900 text-rose-800 dark:text-rose-300 rounded-xl text-xs flex items-start gap-2">
@@ -103,7 +103,7 @@ export function LoginPage() {
             <Input
               label="Institutional Email Address"
               type="email"
-              placeholder="e.g. alex.vance@university.edu"
+              placeholder="e.g. name@chmsu.edu.ph"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               required
@@ -160,53 +160,6 @@ export function LoginPage() {
               {isLoading ? "Authenticating..." : "Login"}
             </Button>
           </form>
-
-          {/* Demo Fast Login Switcher */}
-          <div className="pt-3 border-t border-zinc-100 dark:border-zinc-800">
-            <div className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest mb-2.5 text-center">
-              One-Click Role Demonstration
-            </div>
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-              <button
-                type="button"
-                onClick={() =>
-                  fillQuickCredentials("alex.vance@university.edu", "password123")
-                }
-                className="min-h-[44px] p-2.5 rounded-xl bg-blue-50/70 dark:bg-blue-950/40 border border-blue-200/80 dark:border-blue-900/60 text-left hover:border-blue-300 transition-all hover:scale-[1.01] active:scale-[0.98]"
-              >
-                <div className="flex items-center gap-1 font-bold text-blue-900 dark:text-blue-300 text-[11px]">
-                  <Student size={14} weight="bold" /> Student
-                </div>
-                <div className="text-[10px] text-zinc-500 truncate mt-0.5">Alex Vance · Request</div>
-              </button>
-
-              <button
-                type="button"
-                onClick={() =>
-                  fillQuickCredentials("e.reed@university.edu", "password123")
-                }
-                className="min-h-[44px] p-2.5 rounded-xl bg-purple-50/70 dark:bg-purple-950/40 border border-purple-200/80 dark:border-purple-900/60 text-left hover:border-purple-300 transition-all hover:scale-[1.01] active:scale-[0.98]"
-              >
-                <div className="flex items-center gap-1 font-bold text-purple-900 dark:text-purple-300 text-[11px]">
-                  <ChalkboardTeacher size={14} weight="bold" /> Faculty
-                </div>
-                <div className="text-[10px] text-zinc-500 truncate mt-0.5">Dr. Reed · Priority</div>
-              </button>
-
-              <button
-                type="button"
-                onClick={() =>
-                  fillQuickCredentials("m.holloway@university.edu", "adminpassword")
-                }
-                className="min-h-[44px] p-2.5 rounded-xl bg-emerald-50/70 dark:bg-emerald-950/40 border border-emerald-200/80 dark:border-emerald-900/60 text-left hover:border-emerald-300 transition-all hover:scale-[1.01] active:scale-[0.98]"
-              >
-                <div className="flex items-center gap-1 font-bold text-emerald-900 dark:text-emerald-300 text-[11px]">
-                  <ShieldCheck size={14} weight="bold" /> Admin
-                </div>
-                <div className="text-[10px] text-zinc-500 truncate mt-0.5">Marcus H. · Approvals</div>
-              </button>
-            </div>
-          </div>
 
           {/* Footer: Create Account */}
           <div className="text-center text-xs text-zinc-500 pt-2 border-t border-zinc-100 dark:border-zinc-800">

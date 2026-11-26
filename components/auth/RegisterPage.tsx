@@ -2,6 +2,7 @@
 
 import React, { useState } from "react";
 import { useApp } from "../../context/AppContext";
+import { isInstitutionalRegistrationEmail } from "../../lib/rbac";
 import { Button } from "../ui/Button";
 import { Input, Select } from "../ui/Input";
 import {
@@ -24,6 +25,7 @@ export function RegisterPage() {
   const [email, setEmail] = useState("");
   const [contactNumber, setContactNumber] = useState("");
   const [department, setDepartment] = useState("");
+  const [studentOrEmployeeId, setStudentOrEmployeeId] = useState("");
 
   // Account Information
   const [password, setPassword] = useState("");
@@ -56,8 +58,8 @@ export function RegisterPage() {
       setError("First name and last name are required.");
       return;
     }
-    if (!email.trim() || !email.includes("@") || !email.includes(".")) {
-      setError("Please provide a valid institutional email address.");
+    if (!isInstitutionalRegistrationEmail(email)) {
+      setError("Registration requires an official @chmsu.edu.ph institutional email address.");
       return;
     }
     if (!contactNumber.trim()) {
@@ -66,6 +68,10 @@ export function RegisterPage() {
     }
     if (!department) {
       setError("Please select your academic department or college.");
+      return;
+    }
+    if (!studentOrEmployeeId.trim()) {
+      setError("Student or Employee ID is required.");
       return;
     }
     if (password.length < 6) {
@@ -86,6 +92,7 @@ export function RegisterPage() {
       email: email.trim(),
       contactNumber: contactNumber.trim(),
       department,
+      studentOrEmployeeId: studentOrEmployeeId.trim(),
       password,
       role,
       inviteCode: inviteCode.trim() || undefined,
@@ -137,7 +144,7 @@ export function RegisterPage() {
             <ShieldCheck size={16} className="text-[#0F5132] shrink-0 mt-0.5" />
             <div className="text-zinc-600 dark:text-zinc-400 leading-relaxed text-[11px]">
               Public registration is available for <strong>Students</strong> and{" "}
-              <strong>Faculty Members</strong>. Facility Administrator accounts are issued internally
+              <strong>Faculty &amp; Staff</strong>. Facility Administrator accounts are issued internally
               by the Central Operations Directorate.
             </div>
           </div>
@@ -158,8 +165,8 @@ export function RegisterPage() {
                 value={role}
                 onChange={(e) => setRole(e.target.value as "STUDENT" | "FACULTY")}
                 options={[
-                  { value: "STUDENT", label: "Student (Collegiate & Organization Reservations)" },
-                  { value: "FACULTY", label: "Faculty Member (Priority Academic & Research Allocations)" },
+                  { value: "STUDENT", label: "Student (Collegiate & Organization Reservations · 3-Day Lead Time)" },
+                  { value: "FACULTY", label: "Faculty & Staff (Priority Academic & Operational Allocations)" },
                 ]}
                 helperText="Select your primary academic standing with the university."
                 required
@@ -193,15 +200,15 @@ export function RegisterPage() {
                 <Input
                   label="Institutional Email Address"
                   type="email"
-                  placeholder="e.g. j.taylor@university.edu"
+                  placeholder="e.g. juan.delacruz@chmsu.edu.ph"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  helperText="Must be a valid @university.edu address"
+                  helperText="Must be a valid @chmsu.edu.ph address"
                   required
                 />
                 <Input
                   label="Contact Number"
-                  placeholder="e.g. +1 (555) 019-2834"
+                  placeholder="e.g. +63 917 123 4567"
                   value={contactNumber}
                   onChange={(e) => setContactNumber(e.target.value)}
                   helperText="Used for schedule SMS alerts"
@@ -209,13 +216,23 @@ export function RegisterPage() {
                 />
               </div>
 
-              <Select
-                label="Academic Department / College"
-                value={department}
-                onChange={(e) => setDepartment(e.target.value)}
-                options={departmentsList}
-                required
-              />
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <Select
+                  label="Academic Department / College"
+                  value={department}
+                  onChange={(e) => setDepartment(e.target.value)}
+                  options={departmentsList}
+                  required
+                />
+                <Input
+                  label="Student / Employee ID"
+                  placeholder={role === "STUDENT" ? "e.g. 2026-10482" : "e.g. EMP-1042"}
+                  value={studentOrEmployeeId}
+                  onChange={(e) => setStudentOrEmployeeId(e.target.value)}
+                  helperText="Official CHMSU campus ID number"
+                  required
+                />
+              </div>
             </div>
 
             {/* Section: Account Credentials */}

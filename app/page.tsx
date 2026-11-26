@@ -18,7 +18,8 @@ import { ReportsView } from "../components/views/ReportsView";
 import { UserManagementView } from "../components/views/UserManagementView";
 import { ProfileView } from "../components/views/ProfileView";
 import { NotificationsView } from "../components/views/NotificationsView";
-import { ArchitectureView } from "../components/views/ArchitectureView";
+import { AuditLogsView } from "../components/views/AuditLogsView";
+import { canAccessTab } from "../lib/rbac";
 import { FacilityDetailModal } from "../components/facilities/FacilityDetailModal";
 import { ReservationModal } from "../components/reservations/ReservationModal";
 import { AdminApprovalModal } from "../components/reservations/AdminApprovalModal";
@@ -64,8 +65,6 @@ function MainAppShell() {
     }
   }
 
-  const isAdmin = currentUser.role === "ADMINISTRATOR";
-
   // Authenticated Role-Based System
   const selectedFacility =
     facilities.find((f) => f.id === selectedFacilityId) || null;
@@ -100,11 +99,11 @@ function MainAppShell() {
           {activeTab === "calendar" && <CalendarView />}
           {activeTab === "reservations" && <ReservationsView />}
           {activeTab === "resources" && <ResourcesView />}
-          {activeTab === "reports" && (isAdmin ? <ReportsView /> : <DashboardView />)}
-          {activeTab === "users" && (isAdmin ? <UserManagementView /> : <DashboardView />)}
+          {activeTab === "reports" && (canAccessTab(currentUser.role, "reports") ? <ReportsView /> : <DashboardView />)}
+          {activeTab === "users" && (canAccessTab(currentUser.role, "users") ? <UserManagementView /> : <DashboardView />)}
           {activeTab === "profile" && <ProfileView />}
           {activeTab === "notifications" && <NotificationsView />}
-          {activeTab === "architecture" && (isAdmin ? <ArchitectureView /> : <DashboardView />)}
+          {activeTab === "audit-logs" && (canAccessTab(currentUser.role, "audit-logs") ? <AuditLogsView /> : <DashboardView />)}
         </main>
         <Footer />
       </div>

@@ -157,7 +157,7 @@ export function ForgotPasswordPage() {
               <Input
                 label="Institutional Email Address"
                 type="email"
-                placeholder="e.g. alex.vance@university.edu"
+                placeholder="e.g. name@chmsu.edu.ph"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 helperText="We will send a secure password recovery link to this address."

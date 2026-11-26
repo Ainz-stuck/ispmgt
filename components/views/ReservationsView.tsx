@@ -2,6 +2,7 @@
 
 import React, { useState } from "react";
 import { useApp } from "../../context/AppContext";
+import { hasPermission, getRoleQueuePriority } from "../../lib/rbac";
 import { Reservation, ReservationStatus, UserRole } from "../../types";
 import { StatusBadge, RoleBadge } from "../ui/Badge";
 import { Button } from "../ui/Button";
@@ -38,7 +39,8 @@ export function ReservationsView() {
   const [busyId, setBusyId] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
 
-  const isAdmin = currentUser.role === "ADMINISTRATOR";
+  const isAdmin = hasPermission(currentUser.role, "RESERVATION_APPROVE");
+  const canViewAll = hasPermission(currentUser.role, "RESERVATION_VIEW_ALL");
 
   const handleQuickApprove = async (res: Reservation) => {
     setActionError(null);
@@ -65,24 +67,33 @@ export function ReservationsView() {
     }
   };
 
-  // Filter reservations
-  const filtered = reservations.filter((r) => {
-    // If student or faculty, only show their own unless admin
-    if (!isAdmin && r.userId !== currentUser.id) {
-      return false;
-    }
+  // Filter & priority-sort reservations (pending Faculty & Staff priority first for Admins)
+  const filtered = reservations
+    .filter((r) => {
+      if (!canViewAll && r.userId !== currentUser.id) {
+        return false;
+      }
 
-    const matchesSearch =
-      r.eventName.toLowerCase().includes(search.toLowerCase()) ||
-      r.reservationCode.toLowerCase().includes(search.toLowerCase()) ||
-      r.userName.toLowerCase().includes(search.toLowerCase()) ||
-      r.facilityName.toLowerCase().includes(search.toLowerCase());
+      const matchesSearch =
+        r.eventName.toLowerCase().includes(search.toLowerCase()) ||
+        r.reservationCode.toLowerCase().includes(search.toLowerCase()) ||
+        r.userName.toLowerCase().includes(search.toLowerCase()) ||
+        r.facilityName.toLowerCase().includes(search.toLowerCase());
 
-    const matchesStatus = statusFilter === "ALL" || r.status === statusFilter;
-    const matchesRole = roleFilter === "ALL" || r.userRole === roleFilter;
+      const matchesStatus = statusFilter === "ALL" || r.status === statusFilter;
+      const matchesRole = roleFilter === "ALL" || r.userRole === roleFilter;
 
-    return matchesSearch && matchesStatus && matchesRole;
-  });
+      return matchesSearch && matchesStatus && matchesRole;
+    })
+    .sort((a, b) => {
+      if (!isAdmin) return 0;
+      const aPending = a.status === "PENDING" ? 0 : 1;
+      const bPending = b.status === "PENDING" ? 0 : 1;
+      if (aPending !== bPending) return aPending - bPending;
+      const pDiff = getRoleQueuePriority(a.userRole) - getRoleQueuePriority(b.userRole);
+      if (pDiff !== 0) return pDiff;
+      return (b.submittedAt || "").localeCompare(a.submittedAt || "");
+    });
 
   const pendingCount = reservations.filter((r) => r.status === "PENDING").length;
 
@@ -165,7 +176,7 @@ export function ReservationsView() {
             >
               <option value="ALL">All Roles</option>
               <option value="STUDENT">Student Requests</option>
-              <option value="FACULTY">Faculty Priority</option>
+              <option value="FACULTY">Faculty &amp; Staff Priority</option>
             </select>
           )}
         </div>
@@ -194,6 +205,11 @@ export function ReservationsView() {
                       {res.userName}
                     </span>
                     <RoleBadge role={res.userRole} />
+                    {isAdmin && res.status === "PENDING" && res.userRole === "FACULTY" && (
+                      <span className="px-2 py-0.5 rounded-full bg-purple-100 dark:bg-purple-950/60 text-purple-800 dark:text-purple-300 text-[10px] font-bold border border-purple-200 dark:border-purple-800">
+                        Priority Queue
+                      </span>
+                    )}
                   </div>
                   <div className="text-[10px] text-zinc-400 font-mono mt-0.5">
                     {res.reservationCode} · {res.department}
@@ -348,6 +364,11 @@ export function ReservationsView() {
                           </div>
                           <div className="text-[10px] text-zinc-500 flex items-center gap-1.5 mt-0.5">
                             <RoleBadge role={res.userRole} />
+                    {isAdmin && res.status === "PENDING" && res.userRole === "FACULTY" && (
+                      <span className="px-2 py-0.5 rounded-full bg-purple-100 dark:bg-purple-950/60 text-purple-800 dark:text-purple-300 text-[10px] font-bold border border-purple-200 dark:border-purple-800">
+                        Priority Queue
+                      </span>
+                    )}
                             <span>{res.department}</span>
                           </div>
                         </td>

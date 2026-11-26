@@ -79,7 +79,7 @@ export function RoleBadge({ role, className = "" }: RoleBadgeProps) {
       break;
     case "FACULTY":
       color = "bg-purple-50 text-purple-800 border-purple-200 dark:bg-purple-950/40 dark:text-purple-300 dark:border-purple-800";
-      label = "Faculty Member";
+      label = "Faculty & Staff";
       break;
     case "ADMINISTRATOR":
       color = "bg-emerald-900 text-emerald-100 border-emerald-950 dark:bg-emerald-800 dark:text-emerald-50 dark:border-emerald-700";

@@ -2,9 +2,11 @@
 DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
 DROP TRIGGER IF EXISTS guard_profile_privileged_fields ON public.profiles;
 DROP TRIGGER IF EXISTS check_reservation_overlap ON public.reservations;
+DROP TRIGGER IF EXISTS check_reservation_rbac ON public.reservations;
 DROP FUNCTION IF EXISTS public.handle_new_user();
 DROP FUNCTION IF EXISTS public.protect_profile_privileged_fields();
 DROP FUNCTION IF EXISTS public.prevent_reservation_overlap();
+DROP FUNCTION IF EXISTS public.guard_reservation_rbac();
 DROP FUNCTION IF EXISTS public.get_facility_schedule();
 
 -- 1. Profiles table
@@ -45,11 +47,16 @@ SECURITY DEFINER
 SET search_path = ''
 AS $$
 BEGIN
-  IF auth.uid() IS NOT NULL AND NOT public.is_admin() THEN
-    IF NEW.role IS DISTINCT FROM OLD.role
-       OR NEW.status IS DISTINCT FROM OLD.status
-       OR NEW.student_or_employee_id IS DISTINCT FROM OLD.student_or_employee_id THEN
-      RAISE EXCEPTION 'FORBIDDEN: Only administrators can modify role, status, or institutional ID';
+  IF (SELECT auth.uid()) IS NOT NULL THEN
+    IF NEW.id = (SELECT auth.uid()) AND NEW.role IS DISTINCT FROM OLD.role THEN
+      RAISE EXCEPTION 'FORBIDDEN: Administrators cannot change or demote their own role';
+    END IF;
+    IF NOT public.is_admin() THEN
+      IF NEW.role IS DISTINCT FROM OLD.role
+         OR NEW.status IS DISTINCT FROM OLD.status
+         OR NEW.student_or_employee_id IS DISTINCT FROM OLD.student_or_employee_id THEN
+        RAISE EXCEPTION 'FORBIDDEN: Only administrators can modify role, status, or institutional ID';
+      END IF;
     END IF;
   END IF;
   RETURN NEW;
@@ -246,8 +253,8 @@ DROP POLICY IF EXISTS "Users can update own reservations" ON public.reservations
 CREATE POLICY "Users can update own reservations"
   ON public.reservations FOR UPDATE
   TO authenticated
-  USING ((SELECT auth.uid()) = user_id)
-  WITH CHECK ((SELECT auth.uid()) = user_id);
+  USING ((SELECT auth.uid()) = user_id AND status = 'PENDING')
+  WITH CHECK ((SELECT auth.uid()) = user_id AND status = 'CANCELLED');
 
 DROP POLICY IF EXISTS "Admins can update any reservation" ON public.reservations;
 CREATE POLICY "Admins can update any reservation"
@@ -255,6 +262,53 @@ CREATE POLICY "Admins can update any reservation"
   TO authenticated
   USING (public.is_admin())
   WITH CHECK (public.is_admin());
+
+-- DB-level RBAC lead-time & state transition guard on reservations
+CREATE OR REPLACE FUNCTION public.guard_reservation_rbac()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+DECLARE
+  requester_role TEXT;
+  campus_today DATE;
+BEGIN
+  IF TG_OP = 'INSERT' THEN
+    IF (SELECT auth.uid()) IS NOT NULL AND NOT public.is_admin() THEN
+      SELECT role INTO requester_role FROM public.profiles WHERE id = NEW.user_id;
+      campus_today := (now() AT TIME ZONE 'Asia/Manila')::date;
+      IF COALESCE(requester_role, 'STUDENT') = 'STUDENT' AND NEW.date < (campus_today + 3) THEN
+        RAISE EXCEPTION 'LEAD_TIME_VIOLATION: Student reservations require at least 3 days advance notice (earliest allowed: %).', (campus_today + 3);
+      END IF;
+    END IF;
+    RETURN NEW;
+  END IF;
+
+  IF TG_OP = 'UPDATE' THEN
+    IF (SELECT auth.uid()) IS NOT NULL AND NOT public.is_admin() THEN
+      IF OLD.status <> 'PENDING' OR NEW.status <> 'CANCELLED'
+         OR NEW.facility_id IS DISTINCT FROM OLD.facility_id
+         OR NEW.user_id IS DISTINCT FROM OLD.user_id
+         OR NEW.date IS DISTINCT FROM OLD.date
+         OR NEW.start_time IS DISTINCT FROM OLD.start_time
+         OR NEW.end_time IS DISTINCT FROM OLD.end_time
+         OR NEW.event_name IS DISTINCT FROM OLD.event_name
+         OR NEW.purpose IS DISTINCT FROM OLD.purpose
+         OR NEW.expected_attendees IS DISTINCT FROM OLD.expected_attendees THEN
+        RAISE EXCEPTION 'FORBIDDEN: Non-administrators may only cancel their own pending reservations.';
+      END IF;
+    END IF;
+    RETURN NEW;
+  END IF;
+
+  RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER check_reservation_rbac
+  BEFORE INSERT OR UPDATE ON public.reservations
+  FOR EACH ROW EXECUTE FUNCTION public.guard_reservation_rbac();
 
 -- DB-level double-booking prevention trigger
 CREATE OR REPLACE FUNCTION public.prevent_reservation_overlap()
@@ -382,24 +436,49 @@ CREATE TABLE IF NOT EXISTS public.approval_logs (
   actor_role TEXT NOT NULL DEFAULT '',
   action TEXT NOT NULL CHECK (action IN (
     'SUBMITTED','APPROVED','REJECTED','STATUS_OVERRIDE',
-    'MAINTENANCE_TOGGLE','USER_STATUS_CHANGE','FACILITY_DETAILS_UPDATE'
+    'MAINTENANCE_TOGGLE','USER_STATUS_CHANGE','USER_ROLE_CHANGE','FACILITY_DETAILS_UPDATE'
   )),
   timestamp TIMESTAMPTZ NOT NULL DEFAULT now(),
   notes TEXT NOT NULL DEFAULT ''
 );
 
+ALTER TABLE public.approval_logs DROP CONSTRAINT IF EXISTS approval_logs_action_check;
+ALTER TABLE public.approval_logs ADD CONSTRAINT approval_logs_action_check CHECK (action IN (
+  'SUBMITTED','APPROVED','REJECTED','STATUS_OVERRIDE',
+  'MAINTENANCE_TOGGLE','USER_STATUS_CHANGE','USER_ROLE_CHANGE','FACILITY_DETAILS_UPDATE'
+));
+
 ALTER TABLE public.approval_logs ENABLE ROW LEVEL SECURITY;
 
 DROP POLICY IF EXISTS "Logs are viewable by authenticated users" ON public.approval_logs;
-CREATE POLICY "Logs are viewable by authenticated users"
+DROP POLICY IF EXISTS "Users view own reservation logs or admins view all" ON public.approval_logs;
+CREATE POLICY "Users view own reservation logs or admins view all"
   ON public.approval_logs FOR SELECT
-  TO authenticated USING (true);
+  TO authenticated
+  USING (
+    public.is_admin()
+    OR EXISTS (
+      SELECT 1 FROM public.reservations r
+      WHERE r.id = reservation_id AND r.user_id = (SELECT auth.uid())
+    )
+  );
 
 DROP POLICY IF EXISTS "Authenticated users can insert logs" ON public.approval_logs;
-CREATE POLICY "Authenticated users can insert logs"
+DROP POLICY IF EXISTS "Admins or owners for submissions can insert logs" ON public.approval_logs;
+CREATE POLICY "Admins or owners for submissions can insert logs"
   ON public.approval_logs FOR INSERT
   TO authenticated
-  WITH CHECK (true);
+  WITH CHECK (
+    public.is_admin()
+    OR (
+      action = 'SUBMITTED'
+      AND actor_role IN ('STUDENT', 'FACULTY')
+      AND EXISTS (
+        SELECT 1 FROM public.reservations r
+        WHERE r.id = reservation_id AND r.user_id = (SELECT auth.uid())
+      )
+    )
+  );
 
 -- 7. Notifications table & per-user read tracking
 CREATE TABLE IF NOT EXISTS public.notifications (
@@ -432,9 +511,32 @@ CREATE POLICY "Users can view own notifications"
   );
 
 DROP POLICY IF EXISTS "Authenticated can insert notifications" ON public.notifications;
-CREATE POLICY "Authenticated can insert notifications"
+DROP POLICY IF EXISTS "Authorized notification inserts" ON public.notifications;
+CREATE POLICY "Authorized notification inserts"
   ON public.notifications FOR INSERT
-  TO authenticated WITH CHECK (true);
+  TO authenticated
+  WITH CHECK (
+    public.is_admin()
+    OR (
+      type = 'RESERVATION_SUBMITTED'
+      AND (
+        user_id = (SELECT auth.uid())
+        OR (user_id IS NULL AND target_role = 'ADMINISTRATOR')
+      )
+      AND (
+        reservation_id IS NULL
+        OR EXISTS (
+          SELECT 1 FROM public.reservations r
+          WHERE r.id = reservation_id AND r.user_id = (SELECT auth.uid())
+        )
+      )
+    )
+    OR (
+      type = 'ACCOUNT_SECURITY'
+      AND user_id = (SELECT auth.uid())
+      AND target_role IS NULL
+    )
+  );
 
 DROP POLICY IF EXISTS "Users can update own notifications" ON public.notifications;
 CREATE POLICY "Users can update own notifications"

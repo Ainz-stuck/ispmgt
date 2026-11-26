@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { isInstitutionalRegistrationEmail } from "../../../../lib/rbac";
 
 export async function POST(req: Request) {
   try {
@@ -10,6 +11,7 @@ export async function POST(req: Request) {
       email,
       contactNumber,
       department,
+      studentOrEmployeeId,
       password,
       inviteCode,
     } = body ?? {};
@@ -20,11 +22,19 @@ export async function POST(req: Request) {
       !email?.trim() ||
       !contactNumber?.trim() ||
       !department?.trim() ||
+      !studentOrEmployeeId?.trim() ||
       !password ||
       password.length < 6
     ) {
       return NextResponse.json(
         { error: "All required registration fields must be valid." },
+        { status: 400 }
+      );
+    }
+
+    if (!isInstitutionalRegistrationEmail(email)) {
+      return NextResponse.json(
+        { error: "Institutional registration requires a valid @chmsu.edu.ph email address." },
         { status: 400 }
       );
     }
@@ -56,7 +66,7 @@ export async function POST(req: Request) {
 
     const normalizedEmail = email.trim().toLowerCase();
     const fullName = `${firstName.trim()} ${lastName.trim()}`.trim();
-    const employeeId = `ADM-${Math.floor(1000 + Math.random() * 9000)}`;
+    const employeeId = studentOrEmployeeId.trim().toUpperCase();
 
     const { data: created, error: createError } =
       await supabaseAdmin.auth.admin.createUser({

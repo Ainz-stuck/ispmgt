@@ -47,8 +47,8 @@ export function Footer() {
               Booking Protocols
             </h4>
             <ul className="space-y-1.5 text-zinc-400">
-              <li>Lead Time: 3 Business Days</li>
-              <li>Faculty Priority Review Window</li>
+              <li>Lead Time: 3 Business Days (Students)</li>
+              <li>Faculty &amp; Staff Priority Review Window</li>
               <li>Automatic Conflict & Double-Booking Guard</li>
               <li>Resource Inventory Allocation & Tracking</li>
               <li>Post-Event Custodial Sign-Off</li>
@@ -71,7 +71,7 @@ export function Footer() {
               </div>
               <div className="flex items-center gap-2">
                 <EnvelopeSimple size={15} className="text-emerald-400 shrink-0" />
-                <span>facilities@university.edu</span>
+                <span>facilities@chmsu.edu.ph</span>
               </div>
               <div className="flex items-center gap-2">
                 <ShieldCheck size={15} className="text-emerald-400 shrink-0" />

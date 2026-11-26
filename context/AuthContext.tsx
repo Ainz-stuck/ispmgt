@@ -3,6 +3,7 @@
 import React, { createContext, useContext, useEffect, useState, useCallback } from "react";
 import { supabase } from "../lib/supabase";
 import { fetchProfile, insertNotification } from "../lib/supabase-data";
+import { isInstitutionalRegistrationEmail, ROLE_LABELS } from "../lib/rbac";
 import { User, UserRole, AuthView } from "../types";
 import type { Session, User as SupabaseUser } from "@supabase/supabase-js";
 
@@ -12,10 +13,13 @@ export interface RegisterPayload {
   email: string;
   contactNumber: string;
   department: string;
+  studentOrEmployeeId: string;
   password: string;
   role: "STUDENT" | "FACULTY" | "ADMINISTRATOR";
   inviteCode?: string;
 }
+
+const VALID_UNAUTH_VIEWS = new Set<AuthView>(["landing", "login", "register", "forgot-password"]);
 
 interface AuthContextType {
   session: Session | null;
@@ -56,7 +60,25 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [isPasswordRecovery, setIsPasswordRecovery] = useState<boolean>(false);
   const [authNotice, setAuthNotice] = useState<string | null>(null);
-  const [authView, setAuthView] = useState<AuthView>("landing");
+  const [authView, setAuthViewState] = useState<AuthView>("landing");
+
+  const setAuthView = useCallback((view: AuthView, replace = false) => {
+    setAuthViewState(view);
+    if (typeof window === "undefined") return;
+    const url = new URL(window.location.href);
+    if (view === "app" || view === "landing") {
+      url.searchParams.delete("auth");
+    } else {
+      url.searchParams.set("auth", view);
+      url.searchParams.delete("tab");
+    }
+    const nextUrl = `${url.pathname}${url.search}${window.location.hash}`;
+    if (replace) {
+      window.history.replaceState(null, "", nextUrl);
+    } else if (`${window.location.pathname}${window.location.search}${window.location.hash}` !== nextUrl) {
+      window.history.pushState(null, "", nextUrl);
+    }
+  }, []);
 
   const clearAuthNotice = useCallback(() => setAuthNotice(null), []);
 
@@ -112,9 +134,26 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (activeSession?.user) {
         loadUserProfile(activeSession.user.id).finally(() => setIsLoading(false));
       } else {
+        if (typeof window !== "undefined") {
+          const authParam = new URLSearchParams(window.location.search).get("auth") as AuthView | null;
+          if (authParam && VALID_UNAUTH_VIEWS.has(authParam)) {
+            setAuthViewState(authParam);
+          }
+        }
         setIsLoading(false);
       }
     });
+
+    const handlePopState = () => {
+      if (typeof window === "undefined") return;
+      const authParam = new URLSearchParams(window.location.search).get("auth") as AuthView | null;
+      if (authParam && VALID_UNAUTH_VIEWS.has(authParam)) {
+        setAuthViewState(authParam);
+      } else if (!recoveryMode) {
+        setAuthViewState((prev) => (prev === "app" ? "app" : "landing"));
+      }
+    };
+    window.addEventListener("popstate", handlePopState);
 
     // 2. Auth state change listener
     const {
@@ -148,6 +187,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     return () => {
       subscription.unsubscribe();
+      window.removeEventListener("popstate", handlePopState);
     };
   }, [loadUserProfile]);
 
@@ -193,6 +233,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const register = async (payload: RegisterPayload) => {
     setAuthNotice(null);
     const normalizedEmail = payload.email.trim().toLowerCase();
+    const cleanId = payload.studentOrEmployeeId.trim().toUpperCase();
+
+    if (!isInstitutionalRegistrationEmail(normalizedEmail)) {
+      return {
+        success: false,
+        error: "New institutional accounts must use an official @chmsu.edu.ph email address.",
+      };
+    }
+
+    if (!cleanId) {
+      return {
+        success: false,
+        error: "Student or Employee ID is required.",
+      };
+    }
 
     // If an admin invite code is provided, validate & create securely on the server
     if (payload.inviteCode?.trim()) {
@@ -205,6 +260,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           email: normalizedEmail,
           contactNumber: payload.contactNumber.trim(),
           department: payload.department,
+          studentOrEmployeeId: cleanId,
           password: payload.password,
           inviteCode: payload.inviteCode.trim(),
         }),
@@ -238,17 +294,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       return { success: true };
     }
 
-    // Standard Student / Faculty signup (role enforced in DB trigger)
+    // Standard Student / Faculty & Staff signup (role enforced in DB trigger)
     const targetRole = payload.role === "FACULTY" ? "FACULTY" : "STUDENT";
-    const studentOrEmployeeId =
-      targetRole === "STUDENT"
-        ? `2026-${Math.floor(10000 + Math.random() * 90000)}`
-        : `FAC-${Math.floor(1000 + Math.random() * 9000)}`;
 
     const { data, error } = await supabase.auth.signUp({
       email: normalizedEmail,
       password: payload.password,
       options: {
+        emailRedirectTo:
+          typeof window !== "undefined" ? `${window.location.origin}/` : undefined,
         data: {
           name: `${payload.firstName} ${payload.lastName}`.trim(),
           first_name: payload.firstName.trim(),
@@ -256,13 +310,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           contact_number: payload.contactNumber.trim(),
           department: payload.department,
           role: targetRole,
-          student_or_employee_id: studentOrEmployeeId,
+          student_or_employee_id: cleanId,
         },
       },
     });
 
     if (error) {
       return { success: false, error: error.message };
+    }
+
+    if (data.user && !data.session) {
+      setAuthNotice(
+        "Registration received. Please check your @chmsu.edu.ph email to confirm your account before signing in."
+      );
+      setAuthView("login");
+      return { success: true };
     }
 
     if (data.user) {
@@ -277,9 +339,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       await insertNotification({
         userId: data.user.id,
         title: "Welcome to UniSpace",
-        message: `Your account as a ${
-          targetRole === "STUDENT" ? "Student" : "Faculty Member"
-        } is verified and active.`,
+        message: `Your account as ${ROLE_LABELS[targetRole]} is verified and active.`,
         type: "ACCOUNT_SECURITY",
         timestamp: new Date().toISOString(),
         read: false,

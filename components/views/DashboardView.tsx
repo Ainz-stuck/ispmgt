@@ -3,6 +3,7 @@
 import React, { useState } from "react";
 import Image from "next/image";
 import { useApp } from "../../context/AppContext";
+import { hasPermission, getRoleQueuePriority } from "../../lib/rbac";
 import { Facility, Reservation } from "../../types";
 import { FacilityCard } from "../facilities/FacilityCard";
 import { StatusBadge, RoleBadge } from "../ui/Badge";
@@ -46,13 +47,23 @@ export function DashboardView() {
   const role = currentUser.role;
   const isStudent = role === "STUDENT";
   const isFaculty = role === "FACULTY";
-  const isAdmin = role === "ADMINISTRATOR";
+  const isAdmin = hasPermission(role, "RESERVATION_APPROVE");
 
   // Metrics
   const availableCount = facilities.filter((f) => f.status === "AVAILABLE").length;
-  const userReservations = isAdmin
-    ? reservations
-    : reservations.filter((r) => r.userId === currentUser.id);
+  const userReservations = (
+    hasPermission(role, "RESERVATION_VIEW_ALL")
+      ? [...reservations]
+      : reservations.filter((r) => r.userId === currentUser.id)
+  ).sort((a, b) => {
+    if (!isAdmin) return 0;
+    const aPending = a.status === "PENDING" ? 0 : 1;
+    const bPending = b.status === "PENDING" ? 0 : 1;
+    if (aPending !== bPending) return aPending - bPending;
+    const pDiff = getRoleQueuePriority(a.userRole) - getRoleQueuePriority(b.userRole);
+    if (pDiff !== 0) return pDiff;
+    return (b.submittedAt || "").localeCompare(a.submittedAt || "");
+  });
 
   const pendingCount = reservations.filter((r) => r.status === "PENDING").length;
   const userPendingCount = userReservations.filter((r) => r.status === "PENDING").length;
@@ -86,7 +97,7 @@ export function DashboardView() {
                 {isStudent
                   ? "Student Facility & Event Portal"
                   : isFaculty
-                  ? "Faculty Priority Scheduling Suite"
+                  ? "Faculty & Staff Priority Scheduling Suite"
                   : "Central Operations Command Console"}
               </span>
             </div>
@@ -100,14 +111,14 @@ export function DashboardView() {
           <div className="relative z-10 my-auto py-4 sm:py-6 max-w-4xl space-y-3 sm:space-y-4">
             <h1 className="text-2xl sm:text-4xl md:text-5xl font-bold tracking-tight text-white leading-tight font-sans">
               {isStudent && "UniSpace: University Facility Booking & Resource Scheduling"}
-              {isFaculty && "Faculty Academic Venues & Research Resource Booking"}
+              {isFaculty && "Faculty & Staff Academic Venues & Resource Booking"}
               {isAdmin && "Central University Facility Operations & Governance"}
             </h1>
             <p className="text-xs sm:text-sm md:text-base text-zinc-300 max-w-2xl leading-relaxed font-normal">
               {isStudent &&
                 "Book auditoriums, dance studios, and athletics spaces for collegiate organizations with instant schedule collision checking."}
               {isFaculty &&
-                "Expedited reservations for graduate thesis defenses, symposiums, and departmental research showcases with priority review."}
+                "Expedited reservations for graduate thesis defenses, symposiums, and departmental operations with priority review."}
               {isAdmin &&
                 "Monitor campus venue occupancy, adjudicate pending reservation requests, audit equipment stock, and manage user access."}
             </p>
@@ -482,11 +493,11 @@ export function DashboardView() {
             <div className="p-4 rounded-xl bg-purple-50/70 dark:bg-purple-950/30 border border-purple-200 dark:border-purple-800 text-xs space-y-2">
               <div className="flex items-center gap-1.5 font-bold text-purple-900 dark:text-purple-300">
                 <ChalkboardTeacher size={16} weight="fill" />
-                <span>Faculty Academic Priority</span>
+                <span>Faculty &amp; Staff Priority Queue</span>
               </div>
               <p className="text-purple-900 dark:text-purple-200 text-[11px] leading-relaxed">
-                Faculty requests receive automated priority status in the queue and 24-hour turnaround
-                for departmental oral defenses and collegiate symposiums.
+                Faculty &amp; Staff requests qualify for same-day scheduling and priority placement ahead
+                of student submissions in the administrator review queue.
               </p>
             </div>
           ) : (

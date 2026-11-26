@@ -100,7 +100,15 @@ export interface ApprovalLog {
   facilityName: string;
   actorName: string;
   actorRole: UserRole;
-  action: "SUBMITTED" | "APPROVED" | "REJECTED" | "STATUS_OVERRIDE" | "MAINTENANCE_TOGGLE" | "USER_STATUS_CHANGE" | "FACILITY_DETAILS_UPDATE";
+  action:
+    | "SUBMITTED"
+    | "APPROVED"
+    | "REJECTED"
+    | "STATUS_OVERRIDE"
+    | "MAINTENANCE_TOGGLE"
+    | "USER_STATUS_CHANGE"
+    | "USER_ROLE_CHANGE"
+    | "FACILITY_DETAILS_UPDATE";
   timestamp: string;
   notes: string;
 }
@@ -140,3 +148,15 @@ export interface FacilityScheduleEntry {
 }
 
 export type AuthView = "landing" | "login" | "register" | "forgot-password" | "app";
+
+export type NavTab =
+  | "dashboard"
+  | "facilities"
+  | "calendar"
+  | "reservations"
+  | "resources"
+  | "reports"
+  | "notifications"
+  | "audit-logs"
+  | "profile"
+  | "users";

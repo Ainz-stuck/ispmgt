@@ -197,8 +197,31 @@ export async function toggleUserStatus(
     .update({ status: nextStatus })
     .eq("id", userId);
 
-  if (error) throw error;
+  if (error) {
+    if (error.message?.includes("FORBIDDEN")) {
+      throw new Error("Insufficient administrator permissions to modify user status.");
+    }
+    throw error;
+  }
   return nextStatus;
+}
+
+export async function updateUserRole(
+  userId: string,
+  role: UserRole
+): Promise<UserRole> {
+  const { error } = await supabase
+    .from("profiles")
+    .update({ role })
+    .eq("id", userId);
+
+  if (error) {
+    if (error.message?.includes("FORBIDDEN")) {
+      throw new Error(error.message.replace(/^.*FORBIDDEN:\s*/i, ""));
+    }
+    throw error;
+  }
+  return role;
 }
 
 // ==========================================
@@ -458,6 +481,11 @@ export async function createReservationRecord(
   });
 
   if (resError) {
+    if (resError.message?.includes("LEAD_TIME_VIOLATION")) {
+      throw new Error(
+        resError.message.replace(/^.*LEAD_TIME_VIOLATION:\s*/i, "")
+      );
+    }
     if (resError.message?.includes("SCHEDULE_CONFLICT")) {
       const latestSlots = await fetchFacilitySchedule();
       const dbConflict = latestSlots.find((slot) =>
@@ -637,7 +665,12 @@ export async function cancelReservationRecord(reservationId: string): Promise<vo
     .update({ status: "CANCELLED" })
     .eq("id", reservationId);
 
-  if (error) throw error;
+  if (error) {
+    if (error.message?.includes("FORBIDDEN")) {
+      throw new Error("Only pending reservations you own can be cancelled.");
+    }
+    throw error;
+  }
 }
 
 // ==========================================

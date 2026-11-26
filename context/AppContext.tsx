@@ -14,21 +14,19 @@ import {
   SystemNotification,
   ResourceCondition,
   AuthView,
+  NavTab,
 } from "../types";
 import { useAuth, RegisterPayload } from "./AuthContext";
 import * as db from "../lib/supabase-data";
+import {
+  canAccessTab,
+  hasPermission,
+  isValidNavTab,
+  ROLE_SHORT_LABELS,
+  validateReservationLeadTime,
+} from "../lib/rbac";
 
-export type NavTab =
-  | "dashboard"
-  | "facilities"
-  | "calendar"
-  | "reservations"
-  | "resources"
-  | "reports"
-  | "notifications"
-  | "architecture"
-  | "profile"
-  | "users";
+export type { NavTab };
 
 const DEFAULT_GUEST: User = {
   id: "guest",
@@ -66,6 +64,7 @@ interface AppContextType {
   logout: () => Promise<void>;
   updateUserProfile: (data: Partial<User>) => Promise<ActionResult>;
   toggleUserStatus: (userId: string) => Promise<ActionResult>;
+  updateUserRole: (userId: string, role: UserRole) => Promise<ActionResult>;
 
   // Facilities
   facilities: Facility[];
@@ -158,8 +157,14 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [approvalLogs, setApprovalLogs] = useState<ApprovalLog[]>([]);
   const [notifications, setNotifications] = useState<SystemNotification[]>([]);
 
-  // UI State
-  const [activeTab, setActiveTab] = useState<NavTab>("dashboard");
+  // UI State with URL ?tab= synchronization
+  const [activeTab, setActiveTabState] = useState<NavTab>(() => {
+    if (typeof window !== "undefined") {
+      const param = new URLSearchParams(window.location.search).get("tab");
+      if (isValidNavTab(param)) return param;
+    }
+    return "dashboard";
+  });
   const [selectedFacilityId, setSelectedFacilityId] = useState<FacilityId | null>(null);
   const [isBookingModalOpen, setIsBookingModalOpen] = useState<boolean>(false);
   const [preselectedFacilityId, setPreselectedFacilityId] = useState<FacilityId | null>(null);
@@ -170,6 +175,64 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   const currentUser: User = auth.currentUser || DEFAULT_GUEST;
 
+  const setActiveTab = useCallback(
+    (tab: NavTab) => {
+      const targetTab: NavTab = canAccessTab(currentUser.role, tab) ? tab : "dashboard";
+      setActiveTabState(targetTab);
+      if (typeof window === "undefined" || !auth.isAuthenticated) return;
+
+      const url = new URL(window.location.href);
+      url.searchParams.delete("auth");
+      if (targetTab === "dashboard") {
+        url.searchParams.delete("tab");
+      } else {
+        url.searchParams.set("tab", targetTab);
+      }
+      const nextUrl = `${url.pathname}${url.search}${window.location.hash}`;
+      if (`${window.location.pathname}${window.location.search}${window.location.hash}` !== nextUrl) {
+        window.history.pushState(null, "", nextUrl);
+      }
+    },
+    [currentUser.role, auth.isAuthenticated]
+  );
+
+  // Enforce RBAC on activeTab after user role loads & sync browser Back/Forward
+  useEffect(() => {
+    if (typeof window === "undefined" || !auth.isAuthenticated || !auth.currentUser) return;
+
+    const url = new URL(window.location.href);
+    const param = url.searchParams.get("tab");
+    const resolvedTab: NavTab =
+      isValidNavTab(param) && canAccessTab(auth.currentUser.role, param)
+        ? param
+        : canAccessTab(auth.currentUser.role, activeTab)
+        ? activeTab
+        : "dashboard";
+
+    if (resolvedTab !== activeTab) {
+      setActiveTabState(resolvedTab);
+    }
+
+    if (resolvedTab === "dashboard") {
+      url.searchParams.delete("tab");
+    } else {
+      url.searchParams.set("tab", resolvedTab);
+    }
+    url.searchParams.delete("auth");
+    window.history.replaceState(null, "", `${url.pathname}${url.search}${window.location.hash}`);
+
+    const handlePopState = () => {
+      const nextParam = new URLSearchParams(window.location.search).get("tab");
+      if (isValidNavTab(nextParam) && canAccessTab(auth.currentUser!.role, nextParam)) {
+        setActiveTabState(nextParam);
+      } else {
+        setActiveTabState("dashboard");
+      }
+    };
+    window.addEventListener("popstate", handlePopState);
+    return () => window.removeEventListener("popstate", handlePopState);
+  }, [auth.isAuthenticated, auth.currentUser, activeTab]);
+
   // Fetch all data from Supabase
   const loadAppData = useCallback(async () => {
     try {
@@ -177,10 +240,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       setFacilities(facs);
 
       if (auth.isAuthenticated && auth.currentUser) {
-        const isAdmin = auth.currentUser.role === "ADMINISTRATOR";
+        const canManageUsers = hasPermission(auth.currentUser.role, "USERS_MANAGE");
         const [resrcs, users, rsvps, slots, logs, notifs] = await Promise.all([
           db.fetchResources(),
-          isAdmin ? db.fetchAllUsers() : Promise.resolve([]),
+          canManageUsers ? db.fetchAllUsers() : Promise.resolve([]),
           db.fetchReservations(),
           db.fetchFacilitySchedule(),
           db.fetchApprovalLogs(),
@@ -236,7 +299,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   const logout = async () => {
     await auth.logout();
-    setActiveTab("dashboard");
+    setActiveTabState("dashboard");
+    if (typeof window !== "undefined") {
+      window.history.replaceState(null, "", window.location.pathname);
+    }
   };
 
   const updateUserProfile = async (data: Partial<User>): Promise<ActionResult> => {
@@ -256,8 +322,14 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   };
 
   const toggleUserStatus = async (userId: string): Promise<ActionResult> => {
+    if (!hasPermission(currentUser.role, "USERS_MANAGE")) {
+      return { success: false, error: "Forbidden: Administrator privileges required." };
+    }
     const target = allUsers.find((u) => u.id === userId);
     if (!target) return { success: false, error: "User not found." };
+    if (userId === currentUser.id) {
+      return { success: false, error: "Administrators cannot deactivate their own account." };
+    }
 
     try {
       const nextStatus = await db.toggleUserStatus(userId, target.status);
@@ -265,10 +337,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       setAllUsers((prev) =>
         prev.map((u) => (u.id === userId ? { ...u, status: nextStatus } : u))
       );
-
-      if (currentUser.id === userId) {
-        auth.setCurrentUser((prev) => (prev ? { ...prev, status: nextStatus } : prev));
-      }
 
       const newLog = await db.insertApprovalLog({
         reservationId: `user-${userId}`,
@@ -289,11 +357,60 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  const updateUserRole = async (userId: string, role: UserRole): Promise<ActionResult> => {
+    if (!hasPermission(currentUser.role, "USERS_MANAGE")) {
+      return { success: false, error: "Forbidden: Administrator privileges required." };
+    }
+    if (userId === currentUser.id) {
+      return { success: false, error: "Administrators cannot change or demote their own role." };
+    }
+    const target = allUsers.find((u) => u.id === userId);
+    if (!target) return { success: false, error: "User not found." };
+    if (target.role === role) return { success: true };
+
+    try {
+      await db.updateUserRole(userId, role);
+
+      setAllUsers((prev) =>
+        prev.map((u) => (u.id === userId ? { ...u, role } : u))
+      );
+
+      const newLog = await db.insertApprovalLog({
+        reservationId: `user-${userId}`,
+        reservationCode: target.studentOrEmployeeId,
+        eventName: "User Role Assignment Changed",
+        facilityName: "Security & Role Access",
+        actorName: currentUser.name,
+        actorRole: currentUser.role,
+        action: "USER_ROLE_CHANGE",
+        timestamp: new Date().toISOString(),
+        notes: `User ${target.name} (${target.email}) role updated from ${ROLE_SHORT_LABELS[target.role]} to ${ROLE_SHORT_LABELS[role]}.`,
+      });
+      setApprovalLogs((l) => [newLog, ...l]);
+
+      await db.insertNotification({
+        userId,
+        title: "Institutional Role Updated",
+        message: `Your UniSpace access role was updated to ${ROLE_SHORT_LABELS[role]} by ${currentUser.name}.`,
+        type: "ACCOUNT_SECURITY",
+        timestamp: new Date().toISOString(),
+        read: false,
+      }).catch(() => {});
+
+      return { success: true };
+    } catch (err: any) {
+      return { success: false, error: err?.message || "Failed to update user role." };
+    }
+  };
+
   // Facility Controls
   const updateFacilityStatus = async (
     facilityId: FacilityId,
     status: FacilityStatus
   ): Promise<ActionResult> => {
+    if (!hasPermission(currentUser.role, "FACILITY_MANAGE")) {
+      return { success: false, error: "Forbidden: Administrator privileges required." };
+    }
     try {
       await db.updateFacilityStatus(facilityId, status);
       setFacilities((prev) =>
@@ -324,6 +441,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     facilityId: FacilityId,
     capacity: number
   ): Promise<ActionResult> => {
+    if (!hasPermission(currentUser.role, "FACILITY_MANAGE")) {
+      return { success: false, error: "Forbidden: Administrator privileges required." };
+    }
     try {
       await db.updateFacilityCapacity(facilityId, capacity);
       setFacilities((prev) =>
@@ -339,6 +459,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     facilityId: FacilityId,
     data: Partial<Facility>
   ): Promise<ActionResult> => {
+    if (!hasPermission(currentUser.role, "FACILITY_MANAGE")) {
+      return { success: false, error: "Forbidden: Administrator privileges required." };
+    }
     try {
       await db.updateFacilityDetails(facilityId, data);
       setFacilities((prev) =>
@@ -383,6 +506,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     resourceId: string,
     condition: ResourceCondition
   ): Promise<ActionResult> => {
+    if (!hasPermission(currentUser.role, "RESOURCE_MANAGE")) {
+      return { success: false, error: "Forbidden: Administrator privileges required." };
+    }
     try {
       await db.updateResourceCondition(resourceId, condition);
       setResources((prev) =>
@@ -398,6 +524,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     resourceId: string,
     totalQuantity: number
   ): Promise<ActionResult> => {
+    if (!hasPermission(currentUser.role, "RESOURCE_MANAGE")) {
+      return { success: false, error: "Forbidden: Administrator privileges required." };
+    }
     try {
       await db.updateResourceQuantity(resourceId, totalQuantity);
       setResources((prev) =>
@@ -456,6 +585,11 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     >
   ) => {
     try {
+      const leadCheck = validateReservationLeadTime(currentUser.role, data.date);
+      if (!leadCheck.valid) {
+        return { success: false, error: leadCheck.message };
+      }
+
       // Refresh schedule slots right before creation to catch recent concurrent bookings
       const latestSlots = await db.fetchFacilitySchedule();
       setScheduleSlots(latestSlots);
@@ -491,6 +625,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     reservationId: string,
     notes?: string
   ): Promise<ActionResult> => {
+    if (!hasPermission(currentUser.role, "RESERVATION_APPROVE")) {
+      return { success: false, error: "Forbidden: Only Facility Administrators can approve reservations." };
+    }
     const target = reservations.find((r) => r.id === reservationId);
     if (!target) return { success: false, error: "Reservation not found." };
 
@@ -547,6 +684,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     reservationId: string,
     reason: string
   ): Promise<ActionResult> => {
+    if (!hasPermission(currentUser.role, "RESERVATION_APPROVE")) {
+      return { success: false, error: "Forbidden: Only Facility Administrators can reject reservations." };
+    }
     const target = reservations.find((r) => r.id === reservationId);
     if (!target) return { success: false, error: "Reservation not found." };
 
@@ -655,6 +795,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         logout,
         updateUserProfile,
         toggleUserStatus,
+        updateUserRole,
         facilities,
         updateFacilityStatus,
         updateFacilityCapacity,
