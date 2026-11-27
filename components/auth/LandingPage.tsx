@@ -4,7 +4,6 @@ import React from "react";
 import Image from "next/image";
 import { useApp } from "../../context/AppContext";
 import { Button } from "../ui/Button";
-import { StatusBadge } from "../ui/Badge";
 import { FacilityCard } from "../facilities/FacilityCard";
 import {
   Buildings,
@@ -13,17 +12,15 @@ import {
   Bell,
   CheckCircle,
   ArrowRight,
-  MapPin,
   ShieldCheck,
-  Clock,
   Sparkle,
   SignIn,
   UserPlus,
-  Users,
 } from "@phosphor-icons/react";
 
 export function LandingPage() {
-  const { setAuthView, facilities, setSelectedFacilityId, openBookingModal } = useApp();
+  const { setAuthView, facilities } = useApp();
+  const venueCount = facilities.length || 6;
 
   return (
     <div className="min-h-screen flex flex-col bg-[#FAFAFB] dark:bg-[#09090B] text-zinc-900 dark:text-zinc-50 font-sans selection:bg-[#0F5132] selection:text-white">
@@ -70,7 +67,7 @@ export function LandingPage() {
               Platform Modules
             </a>
             <a href="#facilities" className="hover:text-[#0F5132] dark:hover:text-emerald-400 transition-colors">
-              6 Campus Venues
+              {venueCount} Campus Venues
             </a>
             <a href="#specs" className="hover:text-[#0F5132] dark:hover:text-emerald-400 transition-colors">
               Booking Guidelines
@@ -128,7 +125,7 @@ export function LandingPage() {
               </div>
               <div className="hidden sm:flex items-center gap-2 font-mono text-[11px] text-zinc-400">
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
-                <span>6 Facilities Certified</span>
+                <span>{venueCount} Facilities Certified</span>
               </div>
             </div>
 
@@ -172,7 +169,7 @@ export function LandingPage() {
               <div className="flex flex-wrap items-center gap-6">
                 <span className="flex items-center gap-2">
                   <CheckCircle size={15} weight="fill" className="text-emerald-400" />
-                  <span className="text-zinc-200">Strictly 6 Official Venues</span>
+                  <span className="text-zinc-200">{venueCount} Official Campus Venues</span>
                 </span>
                 <span className="flex items-center gap-2">
                   <CheckCircle size={15} weight="fill" className="text-emerald-400" />
@@ -321,7 +318,7 @@ export function LandingPage() {
                 Managed Campus Facilities
               </h2>
               <p className="text-xs sm:text-sm text-zinc-500">
-                The 6 certified university venues available for verified academic and collegiate bookings
+                The {venueCount} certified university venues available for verified academic and collegiate bookings
               </p>
             </div>
             

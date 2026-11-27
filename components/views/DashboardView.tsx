@@ -4,7 +4,6 @@ import React, { useState } from "react";
 import Image from "next/image";
 import { useApp } from "../../context/AppContext";
 import { hasPermission, getRoleQueuePriority } from "../../lib/rbac";
-import { Facility, Reservation } from "../../types";
 import { FacilityCard } from "../facilities/FacilityCard";
 import { StatusBadge, RoleBadge } from "../ui/Badge";
 import { Button } from "../ui/Button";
@@ -12,18 +11,12 @@ import { Card, CardHeader, CardBody } from "../ui/Card";
 import {
   Buildings,
   Calendar,
-  Clock,
   CheckCircle,
   ClockCountdown,
-  ArrowRight,
   MagnifyingGlass,
   PlusCircle,
-  Users,
-  MapPin,
-  WarningCircle,
   Student,
   ChalkboardTeacher,
-  ShieldCheck,
   TrendUp,
   UserGear,
   Package,
@@ -39,7 +32,6 @@ export function DashboardView() {
     openBookingModal,
     setActiveTab,
     setSelectedReservationForReview,
-    approveReservation,
   } = useApp();
 
   const [searchFilter, setSearchFilter] = useState("");
@@ -175,7 +167,7 @@ export function DashboardView() {
               />
             </div>
             <div className="text-xs text-zinc-400 sm:ml-auto flex items-center justify-between sm:justify-end gap-3 sm:gap-4">
-              <span>6 Certified Venues</span>
+              <span>{facilities.length} Certified Venues</span>
               <span>·</span>
               <span className="text-emerald-400 font-medium">
                 {availableCount} Available Now
@@ -201,10 +193,12 @@ export function DashboardView() {
             </div>
             <div className="mt-4">
               <div className="text-3xl font-bold tracking-tight text-zinc-900 dark:text-zinc-100">
-                {availableCount} <span className="text-sm font-normal text-zinc-400">/ 6</span>
+                {availableCount} <span className="text-sm font-normal text-zinc-400">/ {facilities.length}</span>
               </div>
               <div className="text-[11px] text-zinc-500 mt-1">
-                {availableCount === 6 ? "All spaces open for booking" : "Active spaces open"}
+                {availableCount === facilities.length && facilities.length > 0
+                  ? "All spaces open for booking"
+                  : "Active spaces open"}
               </div>
             </div>
           </div>
@@ -345,7 +339,12 @@ export function DashboardView() {
             <CardBody className="p-0">
               {/* Mobile Card List View (block md:hidden) */}
               <div className="block md:hidden divide-y divide-zinc-100 dark:divide-zinc-800">
-                {userReservations.slice(0, 5).map((res) => (
+                {userReservations.length === 0 ? (
+                  <div className="p-6 text-center text-xs text-zinc-500">
+                    No reservation requests found yet.
+                  </div>
+                ) : (
+                  userReservations.slice(0, 5).map((res) => (
                   <div key={res.id} className="p-4 space-y-2.5">
                     <div className="flex items-start justify-between gap-2">
                       <div className="min-w-0 flex-1">
@@ -384,7 +383,7 @@ export function DashboardView() {
                       </Button>
                     </div>
                   </div>
-                ))}
+                )))}
               </div>
 
               {/* Desktop & Tablet Table (hidden md:block) */}
@@ -400,7 +399,14 @@ export function DashboardView() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
-                    {userReservations.slice(0, 5).map((res) => (
+                    {userReservations.length === 0 ? (
+                      <tr>
+                        <td colSpan={5} className="px-6 py-8 text-center text-zinc-500">
+                          No reservation requests found yet.
+                        </td>
+                      </tr>
+                    ) : (
+                      userReservations.slice(0, 5).map((res) => (
                       <tr
                         key={res.id}
                         className="hover:bg-zinc-50/80 dark:hover:bg-zinc-800/40 transition-colors"
@@ -436,7 +442,7 @@ export function DashboardView() {
                           </Button>
                         </td>
                       </tr>
-                    ))}
+                    )))}
                   </tbody>
                 </table>
               </div>

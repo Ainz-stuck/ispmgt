@@ -3,19 +3,13 @@
 import React, { useState } from "react";
 import { useApp } from "../../context/AppContext";
 import { hasPermission } from "../../lib/rbac";
-import { User, UserRole } from "../../types";
-import { Card, CardHeader, CardBody } from "../ui/Card";
+import { UserRole } from "../../types";
+import { Card, CardBody } from "../ui/Card";
 import { RoleBadge } from "../ui/Badge";
 import { Button } from "../ui/Button";
 import {
-  Users,
   MagnifyingGlass,
   ShieldCheck,
-  CheckCircle,
-  XCircle,
-  ToggleLeft,
-  ToggleRight,
-  UserGear,
   EnvelopeSimple,
   Phone,
 } from "@phosphor-icons/react";
@@ -290,7 +284,14 @@ export function UserManagementView() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
-                {filtered.map((user) => {
+                {filtered.length === 0 ? (
+                  <tr>
+                    <td colSpan={7} className="px-6 py-12 text-center text-zinc-500">
+                      No users match your active filter criteria.
+                    </td>
+                  </tr>
+                ) : (
+                  filtered.map((user) => {
                   const isCurrent = user.id === currentUser.id;
                   const isActive = user.status === "ACTIVE";
 
@@ -384,7 +385,7 @@ export function UserManagementView() {
                       </td>
                     </tr>
                   );
-                })}
+                }))}
               </tbody>
             </table>
           </div>

@@ -9,7 +9,6 @@ import {
   Users,
   MapPin,
   ArrowRight,
-  Sparkle,
 } from "@phosphor-icons/react";
 
 interface FacilityCardProps {
@@ -122,7 +121,11 @@ export function FacilityCard({
               className="flex-1 text-xs min-h-[44px]"
               trailingIcon={<ArrowRight size={12} weight="bold" />}
             >
-              {isAvailable ? "Reserve" : "Occupied"}
+              {isAvailable
+                ? "Reserve"
+                : facility.status === "MAINTENANCE"
+                ? "Under Maintenance"
+                : "Occupied"}
             </Button>
           </div>
         </div>

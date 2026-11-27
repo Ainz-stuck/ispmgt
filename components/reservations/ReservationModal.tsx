@@ -15,16 +15,10 @@ import { Button } from "../ui/Button";
 import { Input, Textarea } from "../ui/Input";
 import { StatusBadge } from "../ui/Badge";
 import {
-  Calendar,
-  Clock,
-  Users,
-  MapPin,
   CheckCircle,
   WarningCircle,
   ArrowRight,
   ArrowLeft,
-  Package,
-  FileText,
   ShieldCheck,
 } from "@phosphor-icons/react";
 
@@ -155,6 +149,47 @@ export function ReservationModal() {
   }, [selectedFacility, date, startTime, endTime, editingReservation?.id, checkConflict]);
 
   if (!isBookingModalOpen) return null;
+
+  const resourceWarnings: string[] = [];
+  if (editingReservation) {
+    for (const prevRes of editingReservation.resources || []) {
+      const existsInCatalog = resources.some((r) => r.id === prevRes.resourceId);
+      if (!existsInCatalog) {
+        resourceWarnings.push(
+          `${prevRes.name} (${prevRes.quantity}) was removed from active inventory and will be omitted when saving.`
+        );
+      }
+    }
+  }
+  for (const [resId, qty] of Object.entries(requestedResources)) {
+    if (qty <= 0) continue;
+    const item = resources.find((r) => r.id === resId);
+    if (!item) continue;
+    if (item.condition === "UNDER_REPAIR") {
+      resourceWarnings.push(
+        `${item.name} (${qty}) is currently Under Repair and will be omitted on save.`
+      );
+    } else if (qty > item.availableQuantity) {
+      resourceWarnings.push(
+        `${item.name}: requested ${qty}, only ${item.availableQuantity} available (will adjust to ${item.availableQuantity} on save).`
+      );
+    }
+  }
+
+  const resourceWarningBanner =
+    resourceWarnings.length > 0 ? (
+      <div className="p-3 rounded-xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 text-xs text-amber-900 dark:text-amber-200 space-y-1">
+        <div className="flex items-center gap-1.5 font-bold">
+          <WarningCircle size={15} weight="fill" className="text-amber-600 shrink-0" />
+          <span>Equipment Availability Notice</span>
+        </div>
+        <ul className="list-disc pl-5 space-y-0.5 text-[11px]">
+          {resourceWarnings.map((msg, i) => (
+            <li key={i}>{msg}</li>
+          ))}
+        </ul>
+      </div>
+    ) : null;
 
   const handleFacilitySelect = (facility: Facility) => {
     if (facility.status !== "AVAILABLE") return;
@@ -642,6 +677,8 @@ export function ReservationModal() {
             Request university inventory equipment and furnishings needed for your event:
           </div>
 
+          {resourceWarningBanner}
+
           <div className="space-y-3">
             {resources.map((res) => {
               const currentQty = requestedResources[res.id] || 0;
@@ -767,8 +804,9 @@ export function ReservationModal() {
             </div>
 
             {/* Resources list */}
-            <div className="pt-2 border-t border-emerald-200/60 dark:border-emerald-800 text-xs">
-              <span className="text-zinc-400 block mb-1">Allocated Resources:</span>
+            <div className="pt-2 border-t border-emerald-200/60 dark:border-emerald-800 text-xs space-y-2">
+              <span className="text-zinc-400 block">Allocated Resources:</span>
+              {resourceWarningBanner}
               <div className="flex flex-wrap gap-2">
                 {Object.entries(requestedResources).some(([, qty]) => qty > 0) ? (
                   Object.entries(requestedResources).map(([resId, qty]) => {

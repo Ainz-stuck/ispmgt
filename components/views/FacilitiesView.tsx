@@ -2,18 +2,15 @@
 
 import React, { useState } from "react";
 import { useApp } from "../../context/AppContext";
-import { Facility, FacilityStatus } from "../../types";
 import { FacilityCard } from "../facilities/FacilityCard";
 import { Button } from "../ui/Button";
-import { MagnifyingGlass, Funnel, PlusCircle, CheckCircle } from "@phosphor-icons/react";
+import { MagnifyingGlass, PlusCircle } from "@phosphor-icons/react";
 
 export function FacilitiesView() {
   const {
     facilities,
     setSelectedFacilityId,
     openBookingModal,
-    currentUser,
-    updateFacilityStatus,
   } = useApp();
 
   const [search, setSearch] = useState("");

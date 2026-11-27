@@ -1,7 +1,31 @@
+import fs from "node:fs";
+import path from "node:path";
 import { createClient } from "@supabase/supabase-js";
 
-const supabaseUrl = "https://eppnkgfrxmjxdzrzimtw.supabase.co";
-const serviceRoleKey = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVwcG5rZ2ZyeG1qeGR6cnppbXR3Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc5NTUwMjMwNywiZXhwIjoyMTExMDc4MzA3fQ.wE2b2hkPa7E9fgTTXNG39skiut3ni6udwt5hGtelY8o";
+function loadEnvLocal() {
+  const envPath = path.resolve(process.cwd(), ".env.local");
+  if (!fs.existsSync(envPath)) return;
+  for (const line of fs.readFileSync(envPath, "utf8").split(/\r?\n/)) {
+    if (!line || line.startsWith("#") || !line.includes("=")) continue;
+    const idx = line.indexOf("=");
+    const k = line.slice(0, idx).trim();
+    const v = line.slice(idx + 1).trim().replace(/^['"]|['"]$/g, "");
+    if (!process.env[k]) process.env[k] = v;
+  }
+}
+
+loadEnvLocal();
+
+const supabaseUrl =
+  process.env.NEXT_PUBLIC_SUPABASE_URL || "https://eppnkgfrxmjxdzrzimtw.supabase.co";
+const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+if (!serviceRoleKey) {
+  console.error(
+    "Missing SUPABASE_SERVICE_ROLE_KEY. Set it in your environment or .env.local before running scripts/seed.mjs."
+  );
+  process.exit(1);
+}
 
 const supabase = createClient(supabaseUrl, serviceRoleKey, {
   auth: { autoRefreshToken: false, persistSession: false },

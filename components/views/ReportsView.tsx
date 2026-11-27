@@ -2,32 +2,30 @@
 
 import React, { useState } from "react";
 import { useApp } from "../../context/AppContext";
+import { getLocalYMD } from "../../lib/utils";
 import { Card, CardHeader, CardBody } from "../ui/Card";
 import { Button } from "../ui/Button";
 import {
-  ChartBar,
   TrendUp,
-  DownloadSimple,
   Printer,
-  Calendar,
   CheckCircle,
   XCircle,
   Clock,
-  Buildings,
 } from "@phosphor-icons/react";
 
 export function ReportsView() {
   const { facilities, reservations } = useApp();
 
   const [reportPeriod, setReportPeriod] = useState<string>("TERM_1");
+  const [todayYMD] = useState<string>(() => getLocalYMD());
   const [last30Cutoff] = useState<string>(() =>
-    new Date(Date.now() - 30 * 86_400_000).toISOString().slice(0, 10)
+    getLocalYMD(new Date(Date.now() - 30 * 86_400_000))
   );
   const [currentYearPrefix] = useState<string>(() => String(new Date().getFullYear()));
 
   const periodReservations = reservations.filter((r) => {
     if (reportPeriod === "LAST_30") {
-      return r.date >= last30Cutoff;
+      return r.date >= last30Cutoff && r.date <= todayYMD;
     }
     if (reportPeriod === "ANNUAL") {
       return r.date.startsWith(currentYearPrefix);
@@ -169,7 +167,9 @@ export function ReportsView() {
             Peak Booking Facility
           </span>
           <div className="text-2xl font-bold tracking-tight text-[#0F5132] dark:text-emerald-400 mt-2 truncate">
-            {facilityStats[0]?.name || "Function Hall"}
+            {(facilityStats[0]?.totalRequests ?? 0) > 0
+              ? facilityStats[0].name
+              : "No bookings in period"}
           </div>
           <span className="text-[11px] text-zinc-500 mt-1 block">
             Highest demand collegiate venue

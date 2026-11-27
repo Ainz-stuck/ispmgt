@@ -33,6 +33,7 @@ interface NavbarProps {
 export function Navbar({ isTabletCollapsed = true, onToggleTabletCollapse }: NavbarProps) {
   const {
     currentUser,
+    facilities,
     activeTab,
     setActiveTab,
     unreadNotificationsCount,
@@ -41,6 +42,8 @@ export function Navbar({ isTabletCollapsed = true, onToggleTabletCollapse }: Nav
     openBookingModal,
     logout,
   } = useApp();
+
+  const availableVenuesCount = facilities.filter((f) => f.status === "AVAILABLE").length;
 
   const [isMobileDrawerOpen, setIsMobileDrawerOpen] = useState(false);
   const [isNotifOpen, setIsNotifOpen] = useState(false);
@@ -285,7 +288,7 @@ export function Navbar({ isTabletCollapsed = true, onToggleTabletCollapse }: Nav
           <div className="flex items-center gap-4 text-emerald-200 text-[11px]">
             <span>Hours: 06:00 - 22:00 PHT</span>
             <span className="inline-flex items-center gap-1 text-emerald-300">
-              <CheckCircle size={13} weight="fill" /> 6/6 Venues Active
+              <CheckCircle size={13} weight="fill" /> {availableVenuesCount}/{facilities.length} Venues Active
             </span>
           </div>
         </div>

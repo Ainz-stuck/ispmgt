@@ -3,14 +3,13 @@
 import React, { useState } from "react";
 import { useApp } from "../../context/AppContext";
 import { NotificationType, SystemNotification } from "../../types";
-import { Card, CardHeader, CardBody } from "../ui/Card";
+import { Card, CardBody } from "../ui/Card";
 import { Button } from "../ui/Button";
 import {
   Bell,
   CheckCircle,
   XCircle,
   Clock,
-  WarningCircle,
   Buildings,
   Check,
   ShieldCheck,

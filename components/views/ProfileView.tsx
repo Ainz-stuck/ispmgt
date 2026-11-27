@@ -7,9 +7,8 @@ import { Card, CardBody } from "../ui/Card";
 import { Button } from "../ui/Button";
 import { RoleBadge } from "../ui/Badge";
 import { Modal } from "../ui/Modal";
-import { Input, Select } from "../ui/Input";
+import { Input } from "../ui/Input";
 import {
-  User,
   EnvelopeSimple,
   Phone,
   Buildings,
@@ -19,7 +18,6 @@ import {
   PencilSimple,
   CheckCircle,
   WarningCircle,
-  ShieldCheck,
 } from "@phosphor-icons/react";
 
 export function ProfileView() {
@@ -46,6 +44,14 @@ export function ProfileView() {
   const handleSaveProfile = async () => {
     if (!editName.trim()) {
       setProfileError("Full name is required.");
+      return;
+    }
+    if (!editContact.trim()) {
+      setProfileError("Contact number is required.");
+      return;
+    }
+    if (!editDept.trim()) {
+      setProfileError("Department / College is required.");
       return;
     }
     setIsSavingProfile(true);

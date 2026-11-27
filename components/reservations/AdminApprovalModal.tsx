@@ -115,7 +115,7 @@ export function AdminApprovalModal() {
             Close
           </Button>
 
-          {res.status === "PENDING" && !canModerate && res.userId === currentUser.id && (
+          {res.status === "PENDING" && res.userId === currentUser.id && (
             <Button
               variant="primary"
               size="sm"

@@ -1,7 +1,12 @@
+"use client";
+
 import React from "react";
+import { useApp } from "../../context/AppContext";
 import { Buildings, EnvelopeSimple, Phone, ShieldCheck, MapPin } from "@phosphor-icons/react";
 
 export function Footer() {
+  const { facilities } = useApp();
+
   return (
     <footer className="mt-auto bg-zinc-900 text-zinc-300 border-t border-zinc-800 text-xs">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10">
@@ -26,18 +31,17 @@ export function Footer() {
             </div>
           </div>
 
-          {/* Col 2: Six Managed Facilities */}
+          {/* Col 2: Managed Facilities */}
           <div>
             <h4 className="text-xs font-semibold text-white uppercase tracking-wider mb-3">
-              Managed Facilities (6)
+              Managed Facilities ({facilities.length})
             </h4>
             <ul className="space-y-1.5 text-zinc-400">
-              <li>1. Function Hall (Cap. 350)</li>
-              <li>2. Dining Hall (Cap. 200)</li>
-              <li>3. Gym (Cap. 500)</li>
-              <li>4. Dance Hall (Cap. 80)</li>
-              <li>5. AVR - Audio Visual Room (Cap. 120)</li>
-              <li>6. Rooftop Engineering Building (Cap. 150)</li>
+              {facilities.map((f, idx) => (
+                <li key={f.id}>
+                  {idx + 1}. {f.name} (Cap. {f.capacity})
+                </li>
+              ))}
             </ul>
           </div>
 
@@ -86,11 +90,11 @@ export function Footer() {
             © 2026 Carlos Hilado Memorial State University - Talisay Campus. All rights reserved.
           </div>
           <div className="flex items-center gap-4">
-            <span className="hover:text-zinc-400 cursor-pointer">Terms of Facility Use</span>
+            <span>Terms of Facility Use</span>
             <span>·</span>
-            <span className="hover:text-zinc-400 cursor-pointer">Safety Guidelines</span>
+            <span>Safety Guidelines</span>
             <span>·</span>
-            <span className="hover:text-zinc-400 cursor-pointer">Asset Recovery Policy</span>
+            <span>Asset Recovery Policy</span>
           </div>
         </div>
       </div>

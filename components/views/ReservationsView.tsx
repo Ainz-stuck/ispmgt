@@ -3,24 +3,19 @@
 import React, { useState } from "react";
 import { useApp } from "../../context/AppContext";
 import { hasPermission, getRoleQueuePriority } from "../../lib/rbac";
-import { Reservation, ReservationStatus, UserRole } from "../../types";
+import { Reservation } from "../../types";
 import { StatusBadge, RoleBadge } from "../ui/Badge";
 import { Button } from "../ui/Button";
-import { Card, CardHeader, CardBody } from "../ui/Card";
+import { Card, CardBody } from "../ui/Card";
 import { Modal } from "../ui/Modal";
 import {
   MagnifyingGlass,
-  Funnel,
   PlusCircle,
   CheckCircle,
   XCircle,
-  FileText,
   Calendar,
   Clock,
-  ArrowRight,
   Buildings,
-  User,
-  Package,
   PencilSimple,
   Trash,
 } from "@phosphor-icons/react";
@@ -319,7 +314,7 @@ export function ReservationsView() {
                 )}
 
                 {/* Owner Edit & Cancel Pending */}
-                {!isAdmin && canEditReservation(res) && (
+                {canEditReservation(res) && (
                   <>
                     <Button
                       variant="outline"
@@ -500,7 +495,7 @@ export function ReservationsView() {
                             )}
 
                             {/* Owner edit & cancel pending */}
-                            {!isAdmin && canEditReservation(res) && (
+                            {canEditReservation(res) && (
                               <>
                                 <Button
                                   variant="outline"

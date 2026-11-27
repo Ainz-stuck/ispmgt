@@ -21,11 +21,8 @@ import {
   Buildings,
   Printer,
   MagnifyingGlass,
-  ArrowClockwise,
   ClockCountdown,
   TrendUp,
-  Tag,
-  Funnel,
   Sparkle,
 } from "@phosphor-icons/react";
 
@@ -581,7 +578,7 @@ export function CalendarView() {
               aria-label="Filter events by facility venue"
               className="h-9 px-2.5 text-xs rounded-xl border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-[#0F5132]"
             >
-              <option value="ALL">All 6 Venues</option>
+              <option value="ALL">All {facilities.length} Venues</option>
               {facilities.map((f) => (
                 <option key={f.id} value={f.id}>
                   {f.name}

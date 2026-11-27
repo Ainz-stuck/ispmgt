@@ -22,6 +22,12 @@ function newId(prefix: string): string {
   return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
 }
 
+function assertDeletedRows(deletedRows: any[] | null, errorMessage: string): void {
+  if (!deletedRows || deletedRows.length === 0) {
+    throw new Error(errorMessage);
+  }
+}
+
 // ==========================================
 // Mappers (Database snake_case -> App camelCase)
 // ==========================================
@@ -410,12 +416,17 @@ export async function updateResource(
 }
 
 export async function deleteResource(resourceId: string): Promise<void> {
-  const { error } = await supabase
+  const { data: deletedRows, error } = await supabase
     .from("resources")
     .delete()
-    .eq("id", resourceId);
+    .eq("id", resourceId)
+    .select("id");
 
   if (error) throw error;
+  assertDeletedRows(
+    deletedRows,
+    "Unable to delete equipment item (insufficient database permissions or item already removed)."
+  );
 }
 
 // ==========================================
@@ -651,7 +662,7 @@ function aggregateRequestedResources(
   const totals = new Map<string, number>();
   for (const item of items) {
     const qty = Math.max(0, Math.floor(Number(item.quantity) || 0));
-    if (!item.resourceId || qty <= 0) continue;
+    if (!item.resourceId || item.resourceId.startsWith("deleted-") || qty <= 0) continue;
     totals.set(item.resourceId, (totals.get(item.resourceId) || 0) + qty);
   }
   return totals;
@@ -869,6 +880,11 @@ export async function updateReservationRecord(
     return { success: false, conflict };
   }
 
+  const { data: priorReqRows } = await supabase
+    .from("requested_resources")
+    .select("id, resource_id, name, quantity")
+    .eq("reservation_id", reservation.id);
+
   const { error: updErr } = await supabase
     .from("reservations")
     .update({
@@ -906,11 +922,37 @@ export async function updateReservationRecord(
     throw updErr;
   }
 
-  const { error: delReqErr } = await supabase
-    .from("requested_resources")
-    .delete()
-    .eq("reservation_id", reservation.id);
-  if (delReqErr) throw delReqErr;
+  const rollbackReservationFields = async () => {
+    await supabase
+      .from("reservations")
+      .update({
+        facility_id: reservation.facilityId,
+        event_name: reservation.eventName,
+        purpose: reservation.purpose,
+        date: reservation.date,
+        start_time: reservation.startTime,
+        end_time: reservation.endTime,
+        expected_attendees: reservation.expectedAttendees,
+      })
+      .eq("id", reservation.id);
+  };
+
+  if (priorReqRows && priorReqRows.length > 0) {
+    const { data: deletedReqRows, error: delReqErr } = await supabase
+      .from("requested_resources")
+      .delete()
+      .eq("reservation_id", reservation.id)
+      .select("id");
+    if (delReqErr || !deletedReqRows || deletedReqRows.length === 0) {
+      await rollbackReservationFields().catch(() => {});
+      throw (
+        delReqErr ||
+        new Error(
+          "Unable to update requested equipment because delete permissions are restricted on requested_resources (run supabase_schema.sql)."
+        )
+      );
+    }
+  }
 
   if (data.resources && data.resources.length > 0) {
     const resourceRows = data.resources.map((res) => ({
@@ -923,7 +965,25 @@ export async function updateReservationRecord(
     const { error: insReqErr } = await supabase
       .from("requested_resources")
       .insert(resourceRows);
-    if (insReqErr) throw insReqErr;
+    if (insReqErr) {
+      await rollbackReservationFields().catch(() => {});
+      if (priorReqRows && priorReqRows.length > 0) {
+        try {
+          await supabase.from("requested_resources").insert(
+            priorReqRows.map((row: any) => ({
+              id: row.id,
+              reservation_id: reservation.id,
+              resource_id: row.resource_id,
+              name: row.name,
+              quantity: row.quantity,
+            }))
+          );
+        } catch {
+          // Ignore secondary rollback error
+        }
+      }
+      throw insReqErr;
+    }
   }
 
   await insertApprovalLog({
@@ -973,10 +1033,11 @@ export async function deleteReservationRecord(
     }
   }
 
-  const { error } = await supabase
+  const { data: deletedRows, error } = await supabase
     .from("reservations")
     .delete()
-    .eq("id", reservationId);
+    .eq("id", reservationId)
+    .select("id");
 
   if (error) {
     if (error.message?.includes("FORBIDDEN")) {
@@ -984,6 +1045,10 @@ export async function deleteReservationRecord(
     }
     throw error;
   }
+  assertDeletedRows(
+    deletedRows,
+    "Unable to delete reservation (missing database delete permissions or record already removed)."
+  );
 
   if (statusToRestore === "APPROVED" && resourcesToRestore.length > 0) {
     const restoreUpdates = await computeResourceStockAdjustments(
@@ -1178,11 +1243,16 @@ export async function deleteNotificationRecord(
   userId: string
 ): Promise<void> {
   if (notif.userId === userId) {
-    const { error } = await supabase
+    const { data: deletedRows, error } = await supabase
       .from("notifications")
       .delete()
-      .eq("id", notif.id);
+      .eq("id", notif.id)
+      .select("id");
     if (error) throw error;
+    assertDeletedRows(
+      deletedRows,
+      "Unable to delete notification (missing database DELETE policy — run supabase_schema.sql)."
+    );
     return;
   }
 
@@ -1215,11 +1285,16 @@ export async function clearReadNotifications(
     .map((n) => n.id);
 
   if (personalIds.length > 0) {
-    const { error } = await supabase
+    const { data: deletedRows, error } = await supabase
       .from("notifications")
       .delete()
-      .in("id", personalIds);
+      .in("id", personalIds)
+      .select("id");
     if (error) throw error;
+    assertDeletedRows(
+      deletedRows,
+      "Unable to delete personal notifications (missing database DELETE policy — run supabase_schema.sql)."
+    );
   }
 
   if (broadcastIds.length > 0) {

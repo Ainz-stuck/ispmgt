@@ -9,13 +9,11 @@ import { Button } from "../ui/Button";
 import { useApp } from "../../context/AppContext";
 import {
   Users,
-  MapPin,
   Clock,
   EnvelopeSimple,
   CheckCircle,
   WarningCircle,
   Calendar,
-  Wrench,
   ArrowRight,
   ShieldCheck,
   PencilSimple,
@@ -24,8 +22,6 @@ import {
   Plus,
   UploadSimple,
   Trash,
-  ArrowClockwise,
-  Sparkle,
   Image as ImageIcon,
 } from "@phosphor-icons/react";
 
@@ -80,6 +76,7 @@ export function FacilityDetailModal({
       setEditForm({ ...facility });
       setIsEditing(false);
       setSaveNotice(false);
+      setStatusError(null);
       setSaveError(null);
       setIsSaving(false);
     }
@@ -174,9 +171,26 @@ export function FacilityDetailModal({
   // Save changes to AppContext
   const handleSave = async () => {
     if (!editForm || isSaving) return;
+    if (!editForm.name.trim()) {
+      setSaveError("Facility name is required.");
+      return;
+    }
+    if (!editForm.code.trim()) {
+      setSaveError("Inventory code is required.");
+      return;
+    }
+    if (!Number.isFinite(editForm.capacity) || editForm.capacity < 1) {
+      setSaveError("Seating capacity must be at least 1.");
+      return;
+    }
     setIsSaving(true);
     setSaveError(null);
-    const res = await updateFacilityDetails(facility.id, editForm);
+    const sanitizedForm = {
+      ...editForm,
+      name: editForm.name.trim(),
+      code: editForm.code.trim(),
+    };
+    const res = await updateFacilityDetails(facility.id, sanitizedForm);
     setIsSaving(false);
     if (!res.success) {
       setSaveError(res.error || "Failed to update facility details.");
@@ -302,7 +316,11 @@ export function FacilityDetailModal({
                   icon={<ArrowRight size={14} weight="bold" />}
                   className="flex-1 sm:flex-none min-h-[44px]"
                 >
-                  {facility.status === "AVAILABLE" ? "Reserve Facility" : "Currently Occupied"}
+                  {facility.status === "AVAILABLE"
+                    ? "Reserve Facility"
+                    : facility.status === "MAINTENANCE"
+                    ? "Under Maintenance"
+                    : "Currently Occupied"}
                 </Button>
               </>
             )}
