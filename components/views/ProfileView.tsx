@@ -182,7 +182,14 @@ export function ProfileView() {
               <Button
                 variant="primary"
                 size="sm"
-                onClick={() => setIsPasswordModalOpen(true)}
+                onClick={() => {
+                  setCurrentPass("");
+                  setNewPass("");
+                  setConfirmPass("");
+                  setPassError(null);
+                  setPassSuccess(null);
+                  setIsPasswordModalOpen(true);
+                }}
                 icon={<Key size={14} weight="bold" />}
                 className="min-h-[44px] sm:min-h-0 text-xs justify-center"
               >

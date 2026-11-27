@@ -63,6 +63,7 @@ export function FacilityDetailModal({
   const [isEditing, setIsEditing] = useState(false);
   const [editForm, setEditForm] = useState<Facility | null>(null);
   const [saveNotice, setSaveNotice] = useState(false);
+  const [statusError, setStatusError] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
 
@@ -222,9 +223,16 @@ export function FacilityDetailModal({
                   <span className="text-[11px] text-zinc-500 font-medium">Status:</span>
                   <select
                     value={facility.status}
-                    onChange={(e) =>
-                      updateFacilityStatus(facility.id, e.target.value as FacilityStatus)
-                    }
+                    onChange={async (e) => {
+                      setStatusError(null);
+                      const res = await updateFacilityStatus(
+                        facility.id,
+                        e.target.value as FacilityStatus
+                      );
+                      if (!res.success && res.error) {
+                        setStatusError(res.error);
+                      }
+                    }}
                     className="text-xs bg-transparent font-semibold text-zinc-800 dark:text-zinc-200 focus:outline-none"
                   >
                     <option value="AVAILABLE">Available</option>
@@ -232,6 +240,11 @@ export function FacilityDetailModal({
                     <option value="BOOKED">Booked</option>
                   </select>
                 </div>
+                {statusError && (
+                  <span className="text-xs text-rose-600 dark:text-rose-400 font-medium">
+                    {statusError}
+                  </span>
+                )}
               </>
             )}
 

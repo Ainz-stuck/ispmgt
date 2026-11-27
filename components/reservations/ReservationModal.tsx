@@ -4,7 +4,6 @@ import React, { useState, useEffect } from "react";
 import Image from "next/image";
 import { useApp } from "../../context/AppContext";
 import { Facility, FacilityScheduleEntry, RequestedResource } from "../../types";
-import { getLocalYMD } from "../../lib/utils";
 import {
   getMinReservationDate,
   hasPermission,
@@ -173,6 +172,10 @@ export function ReservationModal() {
   };
 
   const validateStep2 = () => {
+    if (!selectedFacility || selectedFacility.status !== "AVAILABLE") {
+      setFormError("Selected facility is currently unavailable for reservations.");
+      return false;
+    }
     if (!eventName.trim()) {
       setFormError("Event name is required.");
       return false;
@@ -194,7 +197,15 @@ export function ReservationModal() {
       setFormError("End time must be later than start time.");
       return false;
     }
-    if (selectedFacility && expectedAttendees > selectedFacility.capacity) {
+    if (startTime < "06:00" || endTime > "22:00") {
+      setFormError("Bookings must fall within campus operating hours (06:00 to 22:00).");
+      return false;
+    }
+    if (!Number.isFinite(expectedAttendees) || expectedAttendees < 1) {
+      setFormError("Expected attendees must be at least 1.");
+      return false;
+    }
+    if (expectedAttendees > selectedFacility.capacity) {
       setFormError(
         `Expected attendees (${expectedAttendees}) exceeds venue capacity (${selectedFacility.capacity}).`
       );
@@ -668,7 +679,7 @@ export function ReservationModal() {
                       onClick={() =>
                         handleResourceChange(
                           res.id,
-                          currentQty - (res.id === "res-chair" ? 10 : 1),
+                          currentQty - (res.totalQuantity >= 100 ? 10 : 1),
                           res.availableQuantity
                         )
                       }
@@ -699,7 +710,7 @@ export function ReservationModal() {
                       onClick={() =>
                         handleResourceChange(
                           res.id,
-                          currentQty + (res.id === "res-chair" ? 10 : 1),
+                          currentQty + (res.totalQuantity >= 100 ? 10 : 1),
                           res.availableQuantity
                         )
                       }
@@ -759,7 +770,7 @@ export function ReservationModal() {
             <div className="pt-2 border-t border-emerald-200/60 dark:border-emerald-800 text-xs">
               <span className="text-zinc-400 block mb-1">Allocated Resources:</span>
               <div className="flex flex-wrap gap-2">
-                {Object.entries(requestedResources).some(([_, qty]) => qty > 0) ? (
+                {Object.entries(requestedResources).some(([, qty]) => qty > 0) ? (
                   Object.entries(requestedResources).map(([resId, qty]) => {
                     if (qty <= 0) return null;
                     const r = resources.find((item) => item.id === resId);

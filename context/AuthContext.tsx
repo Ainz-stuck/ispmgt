@@ -1,7 +1,7 @@
 "use client";
 
-import React, { createContext, useContext, useEffect, useState, useCallback } from "react";
-import { supabase } from "../lib/supabase";
+import React, { createContext, useContext, useEffect, useState, useCallback, useRef } from "react";
+import { supabase, createEphemeralSupabaseClient } from "../lib/supabase";
 import { fetchProfile, insertNotification } from "../lib/supabase-data";
 import { isInstitutionalRegistrationEmail, ROLE_LABELS } from "../lib/rbac";
 import { User, UserRole, AuthView } from "../types";
@@ -60,6 +60,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [isPasswordRecovery, setIsPasswordRecovery] = useState<boolean>(false);
   const [authNotice, setAuthNotice] = useState<string | null>(null);
   const [authView, setAuthViewState] = useState<AuthView>("landing");
+  const isExplicitLoginRef = useRef(false);
 
   const setAuthView = useCallback((view: AuthView, replace = false) => {
     setAuthViewState(view);
@@ -101,7 +102,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     } catch (err) {
       console.error("Failed to load user profile:", err);
     }
-  }, []);
+  }, [setAuthView]);
 
   const refreshCurrentUser = useCallback(async () => {
     if (supabaseUser?.id) {
@@ -176,6 +177,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
 
       if (activeSession?.user) {
+        if (event === "SIGNED_IN" && isExplicitLoginRef.current) {
+          setIsLoading(false);
+          return;
+        }
         await loadUserProfile(activeSession.user.id);
       } else {
         setCurrentUser(null);
@@ -188,45 +193,50 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       subscription.unsubscribe();
       window.removeEventListener("popstate", handlePopState);
     };
-  }, [loadUserProfile]);
+  }, [loadUserProfile, setAuthView]);
 
   const login = async (email: string, password: string) => {
     setAuthNotice(null);
-    const { data, error } = await supabase.auth.signInWithPassword({
-      email: email.trim().toLowerCase(),
-      password,
-    });
+    isExplicitLoginRef.current = true;
+    try {
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email: email.trim().toLowerCase(),
+        password,
+      });
 
-    if (error || !data.user) {
-      return {
-        success: false,
-        error: error?.message || "Invalid credentials. Please try again.",
-      };
+      if (error || !data.user) {
+        return {
+          success: false,
+          error: error?.message || "Invalid credentials. Please try again.",
+        };
+      }
+
+      let profile = await fetchProfile(data.user.id);
+      if (!profile) {
+        await new Promise((resolve) => setTimeout(resolve, 500));
+        profile = await fetchProfile(data.user.id);
+      }
+
+      if (!profile) {
+        await supabase.auth.signOut();
+        return { success: false, error: "Profile not found for this account." };
+      }
+
+      if (profile.status === "DEACTIVATED") {
+        await supabase.auth.signOut();
+        return {
+          success: false,
+          error: "Account suspended. Please contact the Facility Administrator.",
+        };
+      }
+
+      setCurrentUser(profile);
+      setIsAuthenticated(true);
+      setAuthView("app");
+      return { success: true, role: profile.role };
+    } finally {
+      isExplicitLoginRef.current = false;
     }
-
-    let profile = await fetchProfile(data.user.id);
-    if (!profile) {
-      await new Promise((resolve) => setTimeout(resolve, 500));
-      profile = await fetchProfile(data.user.id);
-    }
-
-    if (!profile) {
-      await supabase.auth.signOut();
-      return { success: false, error: "Profile not found for this account." };
-    }
-
-    if (profile.status === "DEACTIVATED") {
-      await supabase.auth.signOut();
-      return {
-        success: false,
-        error: "Account suspended. Please contact the Facility Administrator.",
-      };
-    }
-
-    setCurrentUser(profile);
-    setIsAuthenticated(true);
-    setAuthView("app");
-    return { success: true, role: profile.role };
   };
 
   const register = async (payload: RegisterPayload) => {
@@ -345,8 +355,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       return { success: false, error: "No authenticated user email found." };
     }
 
-    // Verify current password first
-    const { error: verifyError } = await supabase.auth.signInWithPassword({
+    // Verify current password using an isolated non-persisting client so the active session stays intact
+    const ephemeralClient = createEphemeralSupabaseClient();
+    const { error: verifyError } = await ephemeralClient.auth.signInWithPassword({
       email: userEmail,
       password: currentPassword,
     });

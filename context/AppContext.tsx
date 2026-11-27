@@ -228,34 +228,47 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     [currentUser.role, auth.isAuthenticated]
   );
 
-  // Enforce RBAC on activeTab after user role loads & sync browser Back/Forward
+  // Enforce RBAC on activeTab when user authenticates or changes role
   useEffect(() => {
     if (typeof window === "undefined" || !auth.isAuthenticated || !auth.currentUser) return;
 
     const url = new URL(window.location.href);
     const param = url.searchParams.get("tab");
+    const role = auth.currentUser.role;
     const resolvedTab: NavTab =
-      isValidNavTab(param) && canAccessTab(auth.currentUser.role, param)
+      isValidNavTab(param) && canAccessTab(role, param)
         ? param
-        : canAccessTab(auth.currentUser.role, activeTab)
-        ? activeTab
         : "dashboard";
 
-    if (resolvedTab !== activeTab) {
-      setActiveTabState(resolvedTab);
-    }
+    setActiveTabState((prev) =>
+      prev === resolvedTab
+        ? prev
+        : isValidNavTab(param) && canAccessTab(role, param)
+        ? param
+        : canAccessTab(role, prev)
+        ? prev
+        : "dashboard"
+    );
 
-    if (resolvedTab === "dashboard") {
+    const effectiveTab =
+      isValidNavTab(param) && canAccessTab(role, param) ? param : "dashboard";
+    if (effectiveTab === "dashboard") {
       url.searchParams.delete("tab");
     } else {
-      url.searchParams.set("tab", resolvedTab);
+      url.searchParams.set("tab", effectiveTab);
     }
     url.searchParams.delete("auth");
     window.history.replaceState(null, "", `${url.pathname}${url.search}${window.location.hash}`);
+  }, [auth.isAuthenticated, auth.currentUser]);
+
+  // Sync browser Back/Forward navigation independently of activeTab updates
+  useEffect(() => {
+    if (typeof window === "undefined" || !auth.isAuthenticated || !auth.currentUser) return;
+    const userRole = auth.currentUser.role;
 
     const handlePopState = () => {
       const nextParam = new URLSearchParams(window.location.search).get("tab");
-      if (isValidNavTab(nextParam) && canAccessTab(auth.currentUser!.role, nextParam)) {
+      if (isValidNavTab(nextParam) && canAccessTab(userRole, nextParam)) {
         setActiveTabState(nextParam);
       } else {
         setActiveTabState("dashboard");
@@ -263,7 +276,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     };
     window.addEventListener("popstate", handlePopState);
     return () => window.removeEventListener("popstate", handlePopState);
-  }, [auth.isAuthenticated, auth.currentUser, activeTab]);
+  }, [auth.isAuthenticated, auth.currentUser]);
 
   // Fetch all data from Supabase
   const loadAppData = useCallback(async () => {
@@ -308,7 +321,15 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const login = async (email: string, pass: string) => {
     const res = await auth.login(email, pass);
     if (res.success) {
-      setActiveTab("dashboard");
+      const param =
+        typeof window !== "undefined"
+          ? new URLSearchParams(window.location.search).get("tab")
+          : null;
+      if (isValidNavTab(param) && res.role && canAccessTab(res.role, param)) {
+        setActiveTabState(param);
+      } else {
+        setActiveTab("dashboard");
+      }
     }
     return res;
   };
@@ -792,14 +813,16 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         )
       );
 
-      const [slots, logs, notifs] = await Promise.all([
+      const [slots, logs, notifs, freshResources] = await Promise.all([
         db.fetchFacilitySchedule(),
         db.fetchApprovalLogs(),
         db.fetchNotifications(currentUser.id, currentUser.role),
+        target.resources.length > 0 ? db.fetchResources() : Promise.resolve(null),
       ]);
       setScheduleSlots(slots);
       setApprovalLogs(logs);
       setNotifications(notifs);
+      if (freshResources) setResources(freshResources);
 
       return { success: true };
     } catch (err: any) {
@@ -959,11 +982,15 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     }
 
     try {
-      await db.deleteReservationRecord(reservationId);
+      await db.deleteReservationRecord(reservationId, target);
       setReservations((prev) => prev.filter((r) => r.id !== reservationId));
       setScheduleSlots((prev) => prev.filter((s) => s.id !== reservationId));
       if (selectedReservationForReview?.id === reservationId) {
         setSelectedReservationForReview(null);
+      }
+
+      if (target.status === "APPROVED" && target.resources.length > 0) {
+        db.fetchResources().then(setResources).catch(() => {});
       }
 
       if (isAdmin) {
@@ -996,10 +1023,14 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     const target = notifications.find((n) => n.id === id);
     if (!target || target.read || currentUser.id === "guest") return;
 
-    await db.markNotificationAsRead(target, currentUser.id);
-    setNotifications((prev) =>
-      prev.map((n) => (n.id === id ? { ...n, read: true } : n))
-    );
+    try {
+      await db.markNotificationAsRead(target, currentUser.id);
+      setNotifications((prev) =>
+        prev.map((n) => (n.id === id ? { ...n, read: true } : n))
+      );
+    } catch (err) {
+      console.error("Failed to mark notification as read:", err);
+    }
   };
 
   const markAllNotificationsAsRead = async () => {
@@ -1007,8 +1038,12 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     const unread = notifications.filter((n) => !n.read);
     if (unread.length === 0) return;
 
-    await db.markAllNotificationsAsRead(currentUser.id, unread);
-    setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
+    try {
+      await db.markAllNotificationsAsRead(currentUser.id, unread);
+      setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
+    } catch (err) {
+      console.error("Failed to mark all notifications as read:", err);
+    }
   };
 
   const deleteNotification = async (id: string): Promise<ActionResult> => {

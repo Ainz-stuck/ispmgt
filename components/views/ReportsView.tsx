@@ -17,20 +17,34 @@ import {
 } from "@phosphor-icons/react";
 
 export function ReportsView() {
-  const { facilities, reservations, resources } = useApp();
+  const { facilities, reservations } = useApp();
 
   const [reportPeriod, setReportPeriod] = useState<string>("TERM_1");
+  const [last30Cutoff] = useState<string>(() =>
+    new Date(Date.now() - 30 * 86_400_000).toISOString().slice(0, 10)
+  );
+  const [currentYearPrefix] = useState<string>(() => String(new Date().getFullYear()));
 
-  const totalBookings = reservations.length;
-  const approvedCount = reservations.filter((r) => r.status === "APPROVED").length;
-  const rejectedCount = reservations.filter((r) => r.status === "REJECTED").length;
-  const pendingCount = reservations.filter((r) => r.status === "PENDING").length;
+  const periodReservations = reservations.filter((r) => {
+    if (reportPeriod === "LAST_30") {
+      return r.date >= last30Cutoff;
+    }
+    if (reportPeriod === "ANNUAL") {
+      return r.date.startsWith(currentYearPrefix);
+    }
+    return true;
+  });
+
+  const totalBookings = periodReservations.length;
+  const approvedCount = periodReservations.filter((r) => r.status === "APPROVED").length;
+  const rejectedCount = periodReservations.filter((r) => r.status === "REJECTED").length;
+  const pendingCount = periodReservations.filter((r) => r.status === "PENDING").length;
 
   const approvalRate = totalBookings > 0 ? Math.round((approvedCount / totalBookings) * 100) : 0;
 
-  // Facility usage analytics calculated from real reservations
+  // Facility usage analytics calculated from filtered reservations
   const facilityStats = facilities.map((f) => {
-    const facilityBookings = reservations.filter((r) => r.facilityId === f.id);
+    const facilityBookings = periodReservations.filter((r) => r.facilityId === f.id);
     const approved = facilityBookings.filter((r) => r.status === "APPROVED").length;
     const utilizationPct =
       totalBookings > 0 ? Math.round((facilityBookings.length / totalBookings) * 100) : 0;
@@ -46,7 +60,7 @@ export function ReportsView() {
   }).sort((a, b) => b.totalRequests - a.totalRequests);
 
   const avgLeadDays = (() => {
-    const diffs = reservations
+    const diffs = periodReservations
       .map((r) => {
         if (!r.date || !r.submittedAt) return null;
         const eventMs = new Date(`${r.date}T00:00:00`).getTime();
@@ -62,7 +76,7 @@ export function ReportsView() {
   const departmentShares = (() => {
     if (totalBookings === 0) return [];
     const counts = new Map<string, number>();
-    for (const r of reservations) {
+    for (const r of periodReservations) {
       const dept = r.department?.trim() || "General Campus Unit";
       counts.set(dept, (counts.get(dept) ?? 0) + 1);
     }

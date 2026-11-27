@@ -584,7 +584,10 @@ export async function createReservationRecord(
     const { error: reqErr } = await supabase
       .from("requested_resources")
       .insert(resourceRows);
-    if (reqErr) throw reqErr;
+    if (reqErr) {
+      await supabase.from("reservations").delete().eq("id", reservationId);
+      throw reqErr;
+    }
   }
 
   // 5. Insert approval log
@@ -642,6 +645,84 @@ export async function createReservationRecord(
   return { success: true, reservationCode: code, reservation: newReservation };
 }
 
+function aggregateRequestedResources(
+  items: Array<{ resourceId: string; quantity: number }>
+): Map<string, number> {
+  const totals = new Map<string, number>();
+  for (const item of items) {
+    const qty = Math.max(0, Math.floor(Number(item.quantity) || 0));
+    if (!item.resourceId || qty <= 0) continue;
+    totals.set(item.resourceId, (totals.get(item.resourceId) || 0) + qty);
+  }
+  return totals;
+}
+
+async function computeResourceStockAdjustments(
+  items: Array<{ resourceId: string; quantity: number }>,
+  mode: "DEDUCT" | "RESTORE"
+): Promise<Array<{ id: string; nextAvailable: number }>> {
+  const requestedById = aggregateRequestedResources(items);
+  if (requestedById.size === 0) return [];
+
+  const resourceIds = Array.from(requestedById.keys());
+  const { data: rows, error } = await supabase
+    .from("resources")
+    .select("id, name, total_quantity, available_quantity, condition")
+    .in("id", resourceIds);
+
+  if (error) throw error;
+
+  const rowMap = new Map<string, any>();
+  for (const row of rows || []) {
+    rowMap.set(row.id, row);
+  }
+
+  const updates: Array<{ id: string; nextAvailable: number }> = [];
+  for (const [resId, qty] of requestedById.entries()) {
+    const row = rowMap.get(resId);
+    if (!row) {
+      if (mode === "DEDUCT") {
+        throw new Error(`Requested inventory item (${resId}) no longer exists.`);
+      }
+      continue;
+    }
+
+    const totalQty = Number(row.total_quantity) || 0;
+    const availQty = Number(row.available_quantity) || 0;
+
+    if (mode === "DEDUCT") {
+      if (row.condition === "UNDER_REPAIR") {
+        throw new Error(`${row.name} is currently under repair and cannot be allocated.`);
+      }
+      if (availQty < qty) {
+        throw new Error(
+          `Insufficient available stock for ${row.name} (requested ${qty}, available ${availQty}).`
+        );
+      }
+      updates.push({ id: resId, nextAvailable: Math.max(0, availQty - qty) });
+    } else {
+      updates.push({ id: resId, nextAvailable: Math.min(totalQty, availQty + qty) });
+    }
+  }
+
+  return updates;
+}
+
+async function applyResourceStockUpdates(
+  updates: Array<{ id: string; nextAvailable: number }>
+): Promise<void> {
+  if (updates.length === 0) return;
+  await Promise.all(
+    updates.map(async (u) => {
+      const { error } = await supabase
+        .from("resources")
+        .update({ available_quantity: u.nextAvailable })
+        .eq("id", u.id);
+      if (error) throw error;
+    })
+  );
+}
+
 export async function approveReservationRecord(
   reservation: Reservation,
   actor: User,
@@ -649,6 +730,12 @@ export async function approveReservationRecord(
 ): Promise<void> {
   const reviewedAt = new Date().toISOString();
   const adminNotes = notes || "Approved by facility administrator.";
+
+  // Validate requested resource availability before committing approval
+  const stockUpdates = await computeResourceStockAdjustments(
+    reservation.resources || [],
+    "DEDUCT"
+  );
 
   const { error } = await supabase
     .from("reservations")
@@ -668,6 +755,8 @@ export async function approveReservationRecord(
     }
     throw error;
   }
+
+  await applyResourceStockUpdates(stockUpdates);
 
   await insertApprovalLog({
     reservationId: reservation.id,
@@ -858,7 +947,32 @@ export async function updateReservationRecord(
   };
 }
 
-export async function deleteReservationRecord(reservationId: string): Promise<void> {
+export async function deleteReservationRecord(
+  reservationId: string,
+  reservation?: Pick<Reservation, "status" | "resources">
+): Promise<void> {
+  let statusToRestore = reservation?.status;
+  let resourcesToRestore: Array<{ resourceId: string; quantity: number }> =
+    reservation?.resources?.map((r) => ({
+      resourceId: r.resourceId,
+      quantity: r.quantity,
+    })) || [];
+
+  if (!statusToRestore) {
+    const { data: existing } = await supabase
+      .from("reservations")
+      .select("status, requested_resources(resource_id, quantity)")
+      .eq("id", reservationId)
+      .maybeSingle();
+    if (existing) {
+      statusToRestore = existing.status;
+      resourcesToRestore = (existing.requested_resources || []).map((r: any) => ({
+        resourceId: r.resource_id,
+        quantity: Number(r.quantity) || 0,
+      }));
+    }
+  }
+
   const { error } = await supabase
     .from("reservations")
     .delete()
@@ -869,6 +983,14 @@ export async function deleteReservationRecord(reservationId: string): Promise<vo
       throw new Error("Insufficient permissions to delete this reservation.");
     }
     throw error;
+  }
+
+  if (statusToRestore === "APPROVED" && resourcesToRestore.length > 0) {
+    const restoreUpdates = await computeResourceStockAdjustments(
+      resourcesToRestore,
+      "RESTORE"
+    );
+    await applyResourceStockUpdates(restoreUpdates);
   }
 }
 
@@ -916,6 +1038,11 @@ export async function insertApprovalLog(log: Omit<ApprovalLog, "id">): Promise<A
 // Notifications (with per-user read tracking)
 // ==========================================
 
+function isMissingDismissedColumnError(err: any): boolean {
+  const msg = String(err?.message || "");
+  return err?.code === "42703" || err?.code === "PGRST204" || /dismissed/i.test(msg);
+}
+
 export async function fetchNotifications(
   userId: string,
   userRole?: string
@@ -944,12 +1071,21 @@ export async function fetchNotifications(
 
   if (notifResult.error || !notifResult.data) return [];
 
+  let readRows: any[] = readsResult.data || [];
+  if (readsResult.error && isMissingDismissedColumnError(readsResult.error)) {
+    const fallbackReads = await supabase
+      .from("notification_reads")
+      .select("notification_id")
+      .eq("user_id", userId);
+    readRows = fallbackReads.data || [];
+  }
+
   const readSet = new Set<string>();
   const dismissedSet = new Set<string>();
-  for (const r of readsResult.data || []) {
-    readSet.add((r as any).notification_id);
-    if ((r as any).dismissed) {
-      dismissedSet.add((r as any).notification_id);
+  for (const r of readRows) {
+    readSet.add(r.notification_id);
+    if (r.dismissed) {
+      dismissedSet.add(r.notification_id);
     }
   }
 
@@ -1055,7 +1191,14 @@ export async function deleteNotificationRecord(
     user_id: userId,
     dismissed: true,
   });
-  if (error) throw error;
+  if (error) {
+    if (isMissingDismissedColumnError(error)) {
+      throw new Error(
+        "Dismissing broadcast announcements requires adding the notification_reads.dismissed column on Supabase (run supabase_schema.sql)."
+      );
+    }
+    throw error;
+  }
 }
 
 export async function clearReadNotifications(
@@ -1086,6 +1229,13 @@ export async function clearReadNotifications(
       dismissed: true,
     }));
     const { error } = await supabase.from("notification_reads").upsert(rows);
-    if (error) throw error;
+    if (error) {
+      if (isMissingDismissedColumnError(error)) {
+        throw new Error(
+          "Clearing broadcast announcements requires adding the notification_reads.dismissed column on Supabase (run supabase_schema.sql)."
+        );
+      }
+      throw error;
+    }
   }
 }

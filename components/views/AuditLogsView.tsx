@@ -85,7 +85,11 @@ export function AuditLogsView() {
       "Target / Facility",
       "Notes",
     ];
-    const escapeCell = (val: string) => `"${(val ?? "").replace(/"/g, '""')}"`;
+    const escapeCell = (val: string) => {
+      const raw = String(val ?? "");
+      const safe = /^[=+\-@\t\r]/.test(raw) ? `'${raw}` : raw;
+      return `"${safe.replace(/"/g, '""')}"`;
+    };
     const rows = filteredLogs.map((log) =>
       [
         log.timestamp,

@@ -31,6 +31,16 @@ import {
 
 type CalendarViewMode = "MONTH" | "WEEK" | "DAY";
 
+function slotOverlapsHour(startTime: string, endTime: string, hourInt: number): boolean {
+  const [sh, sm] = startTime.split(":").map(Number);
+  const [eh, em] = endTime.split(":").map(Number);
+  const startMins = (Number.isFinite(sh) ? sh : 0) * 60 + (Number.isFinite(sm) ? sm : 0);
+  const endMins = (Number.isFinite(eh) ? eh : 0) * 60 + (Number.isFinite(em) ? em : 0);
+  const slotStart = hourInt * 60;
+  const slotEnd = (hourInt + 1) * 60;
+  return startMins < slotEnd && endMins > slotStart;
+}
+
 // Signature Color Profiles per Facility
 const VENUE_THEMES: Record<
   FacilityId,
@@ -1076,11 +1086,9 @@ export function CalendarView() {
                   {OPERATING_HOURS.map((hour) => {
                     const hourInt = parseInt(hour.split(":")[0]);
                     const currentDay = weekDays.find((d) => d.dateStr === selectedDate) || weekDays[0];
-                    const eventInHour = currentDay.reservations.find((r) => {
-                      const startH = parseInt(r.startTime.split(":")[0]);
-                      const endH = parseInt(r.endTime.split(":")[0]);
-                      return hourInt >= startH && hourInt < endH;
-                    });
+                    const eventInHour = currentDay.reservations.find((r) =>
+                      slotOverlapsHour(r.startTime, r.endTime, hourInt)
+                    );
 
                     return (
                       <div key={hour} className="py-2.5 flex items-start gap-3">
@@ -1171,11 +1179,9 @@ export function CalendarView() {
                         {/* 7 Day Slot Cells */}
                         {weekDays.map((d) => {
                           // Find matching reservation spanning this hour
-                          const eventInHour = d.reservations.find((r) => {
-                            const startH = parseInt(r.startTime.split(":")[0]);
-                            const endH = parseInt(r.endTime.split(":")[0]);
-                            return hourInt >= startH && hourInt < endH;
-                          });
+                          const eventInHour = d.reservations.find((r) =>
+                            slotOverlapsHour(r.startTime, r.endTime, hourInt)
+                          );
 
                           if (eventInHour) {
                             const theme =
@@ -1318,12 +1324,11 @@ export function CalendarView() {
                           const theme = VENUE_THEMES[fac.id] || VENUE_THEMES["function-hall"];
 
                           // Find event in this facility covering this hour
-                          const eventInSlot = selectedDateEvents.find((r) => {
-                            if (r.facilityId !== fac.id) return false;
-                            const startH = parseInt(r.startTime.split(":")[0]);
-                            const endH = parseInt(r.endTime.split(":")[0]);
-                            return hourInt >= startH && hourInt < endH;
-                          });
+                          const eventInSlot = selectedDateEvents.find(
+                            (r) =>
+                              r.facilityId === fac.id &&
+                              slotOverlapsHour(r.startTime, r.endTime, hourInt)
+                          );
 
                           if (eventInSlot) {
                             const isFirstHour =
