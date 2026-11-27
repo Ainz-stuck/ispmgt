@@ -32,6 +32,7 @@ import {
 export function ReservationModal() {
   const {
     isBookingModalOpen,
+    editingReservation,
     closeBookingModal,
     preselectedFacilityId,
     preselectedDate,
@@ -40,6 +41,7 @@ export function ReservationModal() {
     resources,
     currentUser,
     createReservation,
+    updateReservation,
     checkConflict,
     setActiveTab,
   } = useApp();
@@ -70,11 +72,31 @@ export function ReservationModal() {
   // Reset or initialize when modal opens
   useEffect(() => {
     if (isBookingModalOpen) {
-      setCurrentStep(1);
       setSubmittedCode(null);
       setFormError(null);
-      setPolicyAccepted(false);
       setIsSubmitting(false);
+
+      if (editingReservation) {
+        setEventName(editingReservation.eventName);
+        setPurpose(editingReservation.purpose);
+        setDate(editingReservation.date);
+        setStartTime(editingReservation.startTime);
+        setEndTime(editingReservation.endTime);
+        setExpectedAttendees(editingReservation.expectedAttendees || 50);
+        const resMap: { [id: string]: number } = {};
+        for (const r of editingReservation.resources || []) {
+          resMap[r.resourceId] = r.quantity;
+        }
+        setRequestedResources(resMap);
+        setPolicyAccepted(true);
+        const found = facilities.find((f) => f.id === editingReservation.facilityId) || null;
+        setSelectedFacility(found);
+        setCurrentStep(found ? 2 : 1);
+        return;
+      }
+
+      setCurrentStep(1);
+      setPolicyAccepted(false);
       setEventName("");
       setPurpose("");
       setExpectedAttendees(50);
@@ -107,17 +129,31 @@ export function ReservationModal() {
         setSelectedFacility(null);
       }
     }
-  }, [isBookingModalOpen, preselectedFacilityId, preselectedDate, preselectedTime, facilities, currentUser.role]);
+  }, [
+    isBookingModalOpen,
+    editingReservation,
+    preselectedFacilityId,
+    preselectedDate,
+    preselectedTime,
+    facilities,
+    currentUser.role,
+  ]);
 
   // Live Conflict Detection when step 2 values change
   useEffect(() => {
     if (selectedFacility && date && startTime && endTime) {
-      const conflict = checkConflict(selectedFacility.id, date, startTime, endTime);
+      const conflict = checkConflict(
+        selectedFacility.id,
+        date,
+        startTime,
+        endTime,
+        editingReservation?.id
+      );
       setConflictReservation(conflict);
     } else {
       setConflictReservation(null);
     }
-  }, [selectedFacility, date, startTime, endTime, checkConflict]);
+  }, [selectedFacility, date, startTime, endTime, editingReservation?.id, checkConflict]);
 
   if (!isBookingModalOpen) return null;
 
@@ -198,7 +234,7 @@ export function ReservationModal() {
     setIsSubmitting(true);
     setFormError(null);
     try {
-      const result = await createReservation({
+      const payload = {
         facilityId: selectedFacility.id,
         facilityName: selectedFacility.name,
         eventName: eventName.trim(),
@@ -208,7 +244,11 @@ export function ReservationModal() {
         endTime,
         expectedAttendees,
         resources: resourceList,
-      });
+      };
+
+      const result = editingReservation
+        ? await updateReservation(editingReservation.id, payload)
+        : await createReservation(payload);
 
       if (result.success && result.reservationCode) {
         setSubmittedCode(result.reservationCode);
@@ -217,7 +257,7 @@ export function ReservationModal() {
         setConflictReservation(result.conflict);
         setFormError("A conflicting booking was just detected. Please choose another time slot.");
       } else {
-        setFormError(result.error || "Unable to submit reservation request. Please try again.");
+        setFormError(result.error || "Unable to save reservation request. Please try again.");
       }
     } catch (err: any) {
       setFormError(err?.message || "An unexpected error occurred while submitting.");
@@ -232,7 +272,11 @@ export function ReservationModal() {
       onClose={closeBookingModal}
       title={
         submittedCode
-          ? "Reservation Confirmed"
+          ? editingReservation
+            ? "Reservation Updated"
+            : "Reservation Confirmed"
+          : editingReservation
+          ? `Edit Reservation ${editingReservation.reservationCode} (Step ${currentStep} of 4)`
           : `New Reservation Request (Step ${currentStep} of 4)`
       }
       subtitle={
@@ -344,7 +388,13 @@ export function ReservationModal() {
                   icon={<CheckCircle size={15} weight="bold" />}
                   className="min-h-[44px]"
                 >
-                  {isSubmitting ? "Submitting..." : "Submit Reservation Request"}
+                  {isSubmitting
+                    ? editingReservation
+                      ? "Saving..."
+                      : "Submitting..."
+                    : editingReservation
+                    ? "Save Reservation Changes"
+                    : "Submit Reservation Request"}
                 </Button>
               )}
             </div>
@@ -756,11 +806,14 @@ export function ReservationModal() {
           </div>
           <div>
             <h3 className="text-xl font-bold text-zinc-900 dark:text-zinc-50">
-              Reservation Submitted Successfully!
+              {editingReservation
+                ? "Reservation Updated Successfully!"
+                : "Reservation Submitted Successfully!"}
             </h3>
             <p className="text-xs text-zinc-500 max-w-md mx-auto mt-1">
-              Your reservation request has been officially recorded in the Carlos Hilado Memorial State University database and
-              forwarded to the Facility Administrator.
+              {editingReservation
+                ? "Your pending reservation details and equipment allocations have been updated in the database."
+                : "Your reservation request has been officially recorded in the Carlos Hilado Memorial State University database and forwarded to the Facility Administrator."}
             </p>
           </div>
 

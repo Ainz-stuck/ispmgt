@@ -7,6 +7,7 @@ import { Reservation, ReservationStatus, UserRole } from "../../types";
 import { StatusBadge, RoleBadge } from "../ui/Badge";
 import { Button } from "../ui/Button";
 import { Card, CardHeader, CardBody } from "../ui/Card";
+import { Modal } from "../ui/Modal";
 import {
   MagnifyingGlass,
   Funnel,
@@ -20,6 +21,8 @@ import {
   Buildings,
   User,
   Package,
+  PencilSimple,
+  Trash,
 } from "@phosphor-icons/react";
 
 export function ReservationsView() {
@@ -28,8 +31,10 @@ export function ReservationsView() {
     currentUser,
     setSelectedReservationForReview,
     openBookingModal,
+    openEditBookingModal,
     approveReservation,
     cancelReservation,
+    deleteReservation,
     checkConflict,
   } = useApp();
 
@@ -38,9 +43,19 @@ export function ReservationsView() {
   const [roleFilter, setRoleFilter] = useState<string>("ALL");
   const [busyId, setBusyId] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [reservationToDelete, setReservationToDelete] = useState<Reservation | null>(null);
 
   const isAdmin = hasPermission(currentUser.role, "RESERVATION_APPROVE");
   const canViewAll = hasPermission(currentUser.role, "RESERVATION_VIEW_ALL");
+
+  const canDeleteReservation = (res: Reservation) => {
+    if (isAdmin) return true;
+    return res.userId === currentUser.id && res.status !== "APPROVED";
+  };
+
+  const canEditReservation = (res: Reservation) => {
+    return res.userId === currentUser.id && res.status === "PENDING";
+  };
 
   const handleQuickApprove = async (res: Reservation) => {
     setActionError(null);
@@ -65,6 +80,18 @@ export function ReservationsView() {
     if (!result.success) {
       setActionError(result.error || "Unable to cancel reservation.");
     }
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!reservationToDelete) return;
+    setActionError(null);
+    setBusyId(reservationToDelete.id);
+    const result = await deleteReservation(reservationToDelete.id);
+    setBusyId(null);
+    if (!result.success) {
+      setActionError(result.error || "Unable to delete reservation.");
+    }
+    setReservationToDelete(null);
   };
 
   // Filter & priority-sort reservations (pending Faculty & Staff priority first for Admins)
@@ -291,16 +318,41 @@ export function ReservationsView() {
                   </>
                 )}
 
-                {/* Student Cancel Pending */}
-                {!isAdmin && res.status === "PENDING" && (
+                {/* Owner Edit & Cancel Pending */}
+                {!isAdmin && canEditReservation(res) && (
+                  <>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={busyId === res.id}
+                      onClick={() => openEditBookingModal(res)}
+                      className="min-h-[44px] text-xs px-3"
+                      icon={<PencilSimple size={15} weight="bold" />}
+                    >
+                      Edit
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      loading={busyId === res.id}
+                      onClick={() => handleCancelReservation(res.id)}
+                      className="min-h-[44px] text-xs text-amber-700 hover:bg-amber-50 px-3"
+                    >
+                      Cancel
+                    </Button>
+                  </>
+                )}
+
+                {canDeleteReservation(res) && (
                   <Button
                     variant="ghost"
                     size="sm"
-                    loading={busyId === res.id}
-                    onClick={() => handleCancelReservation(res.id)}
+                    disabled={busyId === res.id}
+                    onClick={() => setReservationToDelete(res)}
                     className="min-h-[44px] text-xs text-rose-600 hover:bg-rose-50 px-3"
+                    icon={<Trash size={15} />}
                   >
-                    Cancel
+                    Delete
                   </Button>
                 )}
               </div>
@@ -447,16 +499,41 @@ export function ReservationsView() {
                               </>
                             )}
 
-                            {/* User cancel pending */}
-                            {!isAdmin && res.status === "PENDING" && (
+                            {/* Owner edit & cancel pending */}
+                            {!isAdmin && canEditReservation(res) && (
+                              <>
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  disabled={busyId === res.id}
+                                  onClick={() => openEditBookingModal(res)}
+                                  className="h-7 text-xs px-2"
+                                  title="Edit pending reservation"
+                                >
+                                  <PencilSimple size={14} weight="bold" />
+                                </Button>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  loading={busyId === res.id}
+                                  onClick={() => handleCancelReservation(res.id)}
+                                  className="h-7 text-xs text-amber-700 hover:bg-amber-50"
+                                >
+                                  Cancel
+                                </Button>
+                              </>
+                            )}
+
+                            {canDeleteReservation(res) && (
                               <Button
                                 variant="ghost"
                                 size="sm"
-                                loading={busyId === res.id}
-                                onClick={() => handleCancelReservation(res.id)}
-                                className="h-7 text-xs text-rose-600 hover:bg-rose-50"
+                                disabled={busyId === res.id}
+                                onClick={() => setReservationToDelete(res)}
+                                className="h-7 text-xs px-2 text-rose-600 hover:bg-rose-50"
+                                title="Delete reservation"
                               >
-                                Cancel
+                                <Trash size={14} />
                               </Button>
                             )}
                           </div>
@@ -470,6 +547,41 @@ export function ReservationsView() {
           </CardBody>
         </Card>
       </div>
+
+      {/* Delete Reservation Confirmation Modal */}
+      <Modal
+        isOpen={!!reservationToDelete}
+        onClose={() => busyId !== reservationToDelete?.id && setReservationToDelete(null)}
+        title="Delete Reservation Record"
+        subtitle={reservationToDelete?.reservationCode}
+        maxWidth="md"
+        footer={
+          <div className="flex justify-end gap-2 w-full">
+            <Button
+              variant="secondary"
+              size="sm"
+              disabled={busyId === reservationToDelete?.id}
+              onClick={() => setReservationToDelete(null)}
+            >
+              Keep Record
+            </Button>
+            <Button
+              variant="danger"
+              size="sm"
+              loading={busyId === reservationToDelete?.id}
+              onClick={handleConfirmDelete}
+              icon={<Trash size={14} weight="bold" />}
+            >
+              Confirm Delete
+            </Button>
+          </div>
+        }
+      >
+        <p className="text-xs text-zinc-600 dark:text-zinc-300 leading-relaxed">
+          Permanently delete <strong>{reservationToDelete?.eventName}</strong> on{" "}
+          <strong>{reservationToDelete?.date}</strong> ({reservationToDelete?.facilityName})? This action cannot be undone.
+        </p>
+      </Modal>
     </div>
   );
 }

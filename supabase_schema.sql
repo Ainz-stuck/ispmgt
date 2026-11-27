@@ -254,7 +254,7 @@ CREATE POLICY "Users can update own reservations"
   ON public.reservations FOR UPDATE
   TO authenticated
   USING ((SELECT auth.uid()) = user_id AND status = 'PENDING')
-  WITH CHECK ((SELECT auth.uid()) = user_id AND status = 'CANCELLED');
+  WITH CHECK ((SELECT auth.uid()) = user_id AND status IN ('PENDING', 'CANCELLED'));
 
 DROP POLICY IF EXISTS "Admins can update any reservation" ON public.reservations;
 CREATE POLICY "Admins can update any reservation"
@@ -262,6 +262,18 @@ CREATE POLICY "Admins can update any reservation"
   TO authenticated
   USING (public.is_admin())
   WITH CHECK (public.is_admin());
+
+DROP POLICY IF EXISTS "Users can delete own non-approved reservations" ON public.reservations;
+CREATE POLICY "Users can delete own non-approved reservations"
+  ON public.reservations FOR DELETE
+  TO authenticated
+  USING ((SELECT auth.uid()) = user_id AND status IN ('PENDING', 'CANCELLED', 'REJECTED'));
+
+DROP POLICY IF EXISTS "Admins can delete any reservation" ON public.reservations;
+CREATE POLICY "Admins can delete any reservation"
+  ON public.reservations FOR DELETE
+  TO authenticated
+  USING (public.is_admin());
 
 -- DB-level RBAC lead-time & state transition guard on reservations
 CREATE OR REPLACE FUNCTION public.guard_reservation_rbac()
@@ -287,16 +299,23 @@ BEGIN
 
   IF TG_OP = 'UPDATE' THEN
     IF (SELECT auth.uid()) IS NOT NULL AND NOT public.is_admin() THEN
-      IF OLD.status <> 'PENDING' OR NEW.status <> 'CANCELLED'
-         OR NEW.facility_id IS DISTINCT FROM OLD.facility_id
+      IF OLD.status <> 'PENDING' OR NEW.status NOT IN ('PENDING', 'CANCELLED')
+         OR NEW.id IS DISTINCT FROM OLD.id
+         OR NEW.reservation_code IS DISTINCT FROM OLD.reservation_code
          OR NEW.user_id IS DISTINCT FROM OLD.user_id
-         OR NEW.date IS DISTINCT FROM OLD.date
-         OR NEW.start_time IS DISTINCT FROM OLD.start_time
-         OR NEW.end_time IS DISTINCT FROM OLD.end_time
-         OR NEW.event_name IS DISTINCT FROM OLD.event_name
-         OR NEW.purpose IS DISTINCT FROM OLD.purpose
-         OR NEW.expected_attendees IS DISTINCT FROM OLD.expected_attendees THEN
-        RAISE EXCEPTION 'FORBIDDEN: Non-administrators may only cancel their own pending reservations.';
+         OR NEW.submitted_at IS DISTINCT FROM OLD.submitted_at
+         OR NEW.reviewed_at IS DISTINCT FROM OLD.reviewed_at
+         OR NEW.reviewed_by IS DISTINCT FROM OLD.reviewed_by
+         OR NEW.rejection_reason IS DISTINCT FROM OLD.rejection_reason
+         OR NEW.admin_notes IS DISTINCT FROM OLD.admin_notes THEN
+        RAISE EXCEPTION 'FORBIDDEN: Non-administrators may only edit or cancel their own pending reservations.';
+      END IF;
+      IF NEW.date IS DISTINCT FROM OLD.date THEN
+        SELECT role INTO requester_role FROM public.profiles WHERE id = NEW.user_id;
+        campus_today := (now() AT TIME ZONE 'Asia/Manila')::date;
+        IF COALESCE(requester_role, 'STUDENT') = 'STUDENT' AND NEW.date < (campus_today + 3) THEN
+          RAISE EXCEPTION 'LEAD_TIME_VIOLATION: Student reservations require at least 3 days advance notice (earliest allowed: %).', (campus_today + 3);
+        END IF;
       END IF;
     END IF;
     RETURN NEW;
@@ -383,10 +402,16 @@ $$;
 CREATE TABLE IF NOT EXISTS public.requested_resources (
   id TEXT PRIMARY KEY,
   reservation_id TEXT NOT NULL REFERENCES public.reservations(id) ON DELETE CASCADE,
-  resource_id TEXT NOT NULL REFERENCES public.resources(id),
+  resource_id TEXT REFERENCES public.resources(id) ON DELETE SET NULL,
   name TEXT NOT NULL,
   quantity INT NOT NULL DEFAULT 1
 );
+
+ALTER TABLE public.requested_resources ALTER COLUMN resource_id DROP NOT NULL;
+ALTER TABLE public.requested_resources DROP CONSTRAINT IF EXISTS requested_resources_resource_id_fkey;
+ALTER TABLE public.requested_resources
+  ADD CONSTRAINT requested_resources_resource_id_fkey
+  FOREIGN KEY (resource_id) REFERENCES public.resources(id) ON DELETE SET NULL;
 
 ALTER TABLE public.requested_resources ENABLE ROW LEVEL SECURITY;
 
@@ -418,6 +443,17 @@ CREATE POLICY "Users can insert requested resources"
     )
   );
 
+DROP POLICY IF EXISTS "Users can delete own pending requested resources" ON public.requested_resources;
+CREATE POLICY "Users can delete own pending requested resources"
+  ON public.requested_resources FOR DELETE
+  TO authenticated
+  USING (
+    EXISTS (
+      SELECT 1 FROM public.reservations
+      WHERE id = reservation_id AND user_id = (SELECT auth.uid()) AND status = 'PENDING'
+    )
+  );
+
 DROP POLICY IF EXISTS "Admins can manage requested resources" ON public.requested_resources;
 CREATE POLICY "Admins can manage requested resources"
   ON public.requested_resources FOR ALL
@@ -435,8 +471,8 @@ CREATE TABLE IF NOT EXISTS public.approval_logs (
   actor_name TEXT NOT NULL DEFAULT '',
   actor_role TEXT NOT NULL DEFAULT '',
   action TEXT NOT NULL CHECK (action IN (
-    'SUBMITTED','APPROVED','REJECTED','STATUS_OVERRIDE',
-    'MAINTENANCE_TOGGLE','USER_STATUS_CHANGE','USER_ROLE_CHANGE','FACILITY_DETAILS_UPDATE'
+    'SUBMITTED','APPROVED','REJECTED','RESERVATION_UPDATED','RESERVATION_DELETED','STATUS_OVERRIDE',
+    'MAINTENANCE_TOGGLE','RESOURCE_CREATED','RESOURCE_DELETED','USER_STATUS_CHANGE','USER_ROLE_CHANGE','FACILITY_DETAILS_UPDATE'
   )),
   timestamp TIMESTAMPTZ NOT NULL DEFAULT now(),
   notes TEXT NOT NULL DEFAULT ''
@@ -444,8 +480,8 @@ CREATE TABLE IF NOT EXISTS public.approval_logs (
 
 ALTER TABLE public.approval_logs DROP CONSTRAINT IF EXISTS approval_logs_action_check;
 ALTER TABLE public.approval_logs ADD CONSTRAINT approval_logs_action_check CHECK (action IN (
-  'SUBMITTED','APPROVED','REJECTED','STATUS_OVERRIDE',
-  'MAINTENANCE_TOGGLE','USER_STATUS_CHANGE','USER_ROLE_CHANGE','FACILITY_DETAILS_UPDATE'
+  'SUBMITTED','APPROVED','REJECTED','RESERVATION_UPDATED','RESERVATION_DELETED','STATUS_OVERRIDE',
+  'MAINTENANCE_TOGGLE','RESOURCE_CREATED','RESOURCE_DELETED','USER_STATUS_CHANGE','USER_ROLE_CHANGE','FACILITY_DETAILS_UPDATE'
 ));
 
 ALTER TABLE public.approval_logs ENABLE ROW LEVEL SECURITY;
@@ -471,7 +507,7 @@ CREATE POLICY "Admins or owners for submissions can insert logs"
   WITH CHECK (
     public.is_admin()
     OR (
-      action = 'SUBMITTED'
+      action IN ('SUBMITTED', 'RESERVATION_UPDATED')
       AND actor_role IN ('STUDENT', 'FACULTY')
       AND EXISTS (
         SELECT 1 FROM public.reservations r
@@ -552,12 +588,28 @@ CREATE POLICY "Admins can update all notifications"
   USING (public.is_admin())
   WITH CHECK (public.is_admin());
 
+DROP POLICY IF EXISTS "Users can delete own notifications" ON public.notifications;
+CREATE POLICY "Users can delete own notifications"
+  ON public.notifications FOR DELETE
+  TO authenticated
+  USING (user_id = (SELECT auth.uid()));
+
+DROP POLICY IF EXISTS "Admins can delete any notification" ON public.notifications;
+CREATE POLICY "Admins can delete any notification"
+  ON public.notifications FOR DELETE
+  TO authenticated
+  USING (public.is_admin());
+
 CREATE TABLE IF NOT EXISTS public.notification_reads (
   notification_id TEXT NOT NULL REFERENCES public.notifications(id) ON DELETE CASCADE,
   user_id UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
   read_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  dismissed BOOLEAN NOT NULL DEFAULT false,
   PRIMARY KEY (notification_id, user_id)
 );
+
+ALTER TABLE public.notification_reads
+  ADD COLUMN IF NOT EXISTS dismissed BOOLEAN NOT NULL DEFAULT false;
 
 ALTER TABLE public.notification_reads ENABLE ROW LEVEL SECURITY;
 

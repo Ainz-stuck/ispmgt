@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from "react";
 import { useApp } from "../../context/AppContext";
+import { hasPermission } from "../../lib/rbac";
 import { Modal } from "../ui/Modal";
 import { Button } from "../ui/Button";
 import { StatusBadge, RoleBadge } from "../ui/Badge";
@@ -12,16 +13,21 @@ import {
   CheckCircle,
   XCircle,
   WarningCircle,
+  PencilSimple,
 } from "@phosphor-icons/react";
 
 export function AdminApprovalModal() {
   const {
+    currentUser,
     selectedReservationForReview,
     setSelectedReservationForReview,
     approveReservation,
     rejectReservation,
+    openEditBookingModal,
     checkConflict,
   } = useApp();
+
+  const canModerate = hasPermission(currentUser.role, "RESERVATION_APPROVE");
 
   const [adminNotes, setAdminNotes] = useState("");
   const [rejectionReason, setRejectionReason] = useState("");
@@ -109,7 +115,23 @@ export function AdminApprovalModal() {
             Close
           </Button>
 
-          {res.status === "PENDING" && (
+          {res.status === "PENDING" && !canModerate && res.userId === currentUser.id && (
+            <Button
+              variant="primary"
+              size="sm"
+              onClick={() => {
+                const target = res;
+                setSelectedReservationForReview(null);
+                openEditBookingModal(target);
+              }}
+              icon={<PencilSimple size={15} weight="bold" />}
+              className="min-h-[44px] sm:min-h-0"
+            >
+              Edit Reservation
+            </Button>
+          )}
+
+          {canModerate && res.status === "PENDING" && (
             <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
               {!isRejecting ? (
                 <>
@@ -274,8 +296,8 @@ export function AdminApprovalModal() {
           </div>
         )}
 
-        {/* Action Input Forms for Pending Items */}
-        {res.status === "PENDING" && !isRejecting && (
+        {/* Action Input Forms for Pending Items (Admin Only) */}
+        {canModerate && res.status === "PENDING" && !isRejecting && (
           <div className="pt-2">
             <Textarea
               label="Approval Remarks & Custodial Instructions (Optional)"
@@ -286,7 +308,7 @@ export function AdminApprovalModal() {
           </div>
         )}
 
-        {res.status === "PENDING" && isRejecting && (
+        {canModerate && res.status === "PENDING" && isRejecting && (
           <div className="pt-2 bg-rose-50/50 p-3 rounded-xl border border-rose-200">
             <Textarea
               label="Official Rejection Reason (Mandatory)"

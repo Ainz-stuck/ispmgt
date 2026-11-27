@@ -80,6 +80,12 @@ interface AppContextType {
 
   // Resources
   resources: ResourceItem[];
+  createResource: (data: Omit<ResourceItem, "id">) => Promise<ActionResult>;
+  updateResource: (
+    resourceId: string,
+    data: Partial<Omit<ResourceItem, "id">>
+  ) => Promise<ActionResult>;
+  deleteResource: (resourceId: string) => Promise<ActionResult>;
   updateResourceCondition: (
     resourceId: string,
     condition: ResourceCondition
@@ -108,6 +114,27 @@ interface AppContextType {
     reservationCode?: string;
     error?: string;
   }>;
+  updateReservation: (
+    reservationId: string,
+    data: Omit<
+      Reservation,
+      | "id"
+      | "reservationCode"
+      | "status"
+      | "submittedAt"
+      | "userId"
+      | "userName"
+      | "userRole"
+      | "userEmail"
+      | "department"
+    >
+  ) => Promise<{
+    success: boolean;
+    conflict?: FacilityScheduleEntry;
+    reservationCode?: string;
+    error?: string;
+  }>;
+  deleteReservation: (reservationId: string) => Promise<ActionResult>;
   approveReservation: (reservationId: string, notes?: string) => Promise<ActionResult>;
   rejectReservation: (reservationId: string, reason: string) => Promise<ActionResult>;
   cancelReservation: (reservationId: string) => Promise<ActionResult>;
@@ -117,6 +144,8 @@ interface AppContextType {
   notifications: SystemNotification[];
   markNotificationAsRead: (id: string) => Promise<void>;
   markAllNotificationsAsRead: () => Promise<void>;
+  deleteNotification: (id: string) => Promise<ActionResult>;
+  clearReadNotifications: () => Promise<ActionResult>;
   unreadNotificationsCount: number;
 
   // Navigation & Modals
@@ -125,10 +154,12 @@ interface AppContextType {
   selectedFacilityId: FacilityId | null;
   setSelectedFacilityId: (id: FacilityId | null) => void;
   isBookingModalOpen: boolean;
+  editingReservation: Reservation | null;
   preselectedFacilityId: FacilityId | null;
   preselectedDate: string | null;
   preselectedTime: string | null;
   openBookingModal: (facilityId?: FacilityId, date?: string, time?: string) => void;
+  openEditBookingModal: (reservation: Reservation) => void;
   closeBookingModal: () => void;
   selectedReservationForReview: Reservation | null;
   setSelectedReservationForReview: (res: Reservation | null) => void;
@@ -167,6 +198,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   });
   const [selectedFacilityId, setSelectedFacilityId] = useState<FacilityId | null>(null);
   const [isBookingModalOpen, setIsBookingModalOpen] = useState<boolean>(false);
+  const [editingReservation, setEditingReservation] = useState<Reservation | null>(null);
   const [preselectedFacilityId, setPreselectedFacilityId] = useState<FacilityId | null>(null);
   const [preselectedDate, setPreselectedDate] = useState<string | null>(null);
   const [preselectedTime, setPreselectedTime] = useState<string | null>(null);
@@ -501,7 +533,105 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  // Resource Controls
+  // Resource Controls (Full CRUD)
+  const createResource = async (
+    data: Omit<ResourceItem, "id">
+  ): Promise<ActionResult> => {
+    if (!hasPermission(currentUser.role, "RESOURCE_MANAGE")) {
+      return { success: false, error: "Forbidden: Administrator privileges required." };
+    }
+    try {
+      const created = await db.createResource(data);
+      setResources((prev) =>
+        [...prev, created].sort((a, b) => a.name.localeCompare(b.name))
+      );
+
+      const newLog = await db.insertApprovalLog({
+        reservationId: created.id,
+        reservationCode: created.category,
+        eventName: `Equipment Added: ${created.name}`,
+        facilityName:
+          created.facilityScope === "CAMPUS_WIDE"
+            ? "Campus-Wide Warehouse"
+            : created.facilityScope,
+        actorName: currentUser.name,
+        actorRole: currentUser.role,
+        action: "RESOURCE_CREATED",
+        timestamp: new Date().toISOString(),
+        notes: `Created ${created.name} (${created.availableQuantity}/${created.totalQuantity} ${created.unit}, ${created.condition}).`,
+      });
+      setApprovalLogs((prev) => [newLog, ...prev]);
+
+      return { success: true };
+    } catch (err: any) {
+      return { success: false, error: err?.message || "Failed to add equipment item." };
+    }
+  };
+
+  const updateResource = async (
+    resourceId: string,
+    data: Partial<Omit<ResourceItem, "id">>
+  ): Promise<ActionResult> => {
+    if (!hasPermission(currentUser.role, "RESOURCE_MANAGE")) {
+      return { success: false, error: "Forbidden: Administrator privileges required." };
+    }
+    try {
+      await db.updateResource(resourceId, data);
+      setResources((prev) =>
+        prev
+          .map((r) => {
+            if (r.id !== resourceId) return r;
+            const nextTotal =
+              data.totalQuantity !== undefined ? data.totalQuantity : r.totalQuantity;
+            const nextAvailable =
+              data.availableQuantity !== undefined
+                ? Math.min(data.availableQuantity, nextTotal)
+                : Math.min(r.availableQuantity, nextTotal);
+            return {
+              ...r,
+              ...data,
+              totalQuantity: nextTotal,
+              availableQuantity: nextAvailable,
+            };
+          })
+          .sort((a, b) => a.name.localeCompare(b.name))
+      );
+      return { success: true };
+    } catch (err: any) {
+      return { success: false, error: err?.message || "Failed to update equipment details." };
+    }
+  };
+
+  const deleteResource = async (resourceId: string): Promise<ActionResult> => {
+    if (!hasPermission(currentUser.role, "RESOURCE_MANAGE")) {
+      return { success: false, error: "Forbidden: Administrator privileges required." };
+    }
+    const target = resources.find((r) => r.id === resourceId);
+    try {
+      await db.deleteResource(resourceId);
+      setResources((prev) => prev.filter((r) => r.id !== resourceId));
+
+      if (target) {
+        const newLog = await db.insertApprovalLog({
+          reservationId: resourceId,
+          reservationCode: target.category,
+          eventName: `Equipment Deleted: ${target.name}`,
+          facilityName: "Campus-Wide Warehouse",
+          actorName: currentUser.name,
+          actorRole: currentUser.role,
+          action: "RESOURCE_DELETED",
+          timestamp: new Date().toISOString(),
+          notes: `Removed ${target.name} from active inventory catalog.`,
+        });
+        setApprovalLogs((prev) => [newLog, ...prev]);
+      }
+
+      return { success: true };
+    } catch (err: any) {
+      return { success: false, error: err?.message || "Failed to delete equipment item." };
+    }
+  };
+
   const updateResourceCondition = async (
     resourceId: string,
     condition: ResourceCondition
@@ -742,6 +872,126 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  const updateReservation = async (
+    reservationId: string,
+    data: Omit<
+      Reservation,
+      | "id"
+      | "reservationCode"
+      | "status"
+      | "submittedAt"
+      | "userId"
+      | "userName"
+      | "userRole"
+      | "userEmail"
+      | "department"
+    >
+  ) => {
+    const target = reservations.find((r) => r.id === reservationId);
+    if (!target) {
+      return { success: false, error: "Reservation record not found." };
+    }
+    const isAdmin = hasPermission(currentUser.role, "RESERVATION_APPROVE");
+    if (!isAdmin && target.userId !== currentUser.id) {
+      return { success: false, error: "Forbidden: You can only edit your own reservations." };
+    }
+    if (target.status !== "PENDING") {
+      return { success: false, error: "Only pending reservations can be edited." };
+    }
+
+    try {
+      const leadCheck = validateReservationLeadTime(currentUser.role, data.date);
+      if (!leadCheck.valid) {
+        return { success: false, error: leadCheck.message };
+      }
+
+      const latestSlots = await db.fetchFacilitySchedule();
+      setScheduleSlots(latestSlots);
+
+      const res = await db.updateReservationRecord(
+        target,
+        data,
+        currentUser,
+        latestSlots
+      );
+      if (!res.success) {
+        return { success: false, conflict: res.conflict };
+      }
+
+      if (res.reservation) {
+        setReservations((prev) =>
+          prev.map((r) => (r.id === reservationId ? res.reservation! : r))
+        );
+      }
+
+      const [slots, logs] = await Promise.all([
+        db.fetchFacilitySchedule(),
+        db.fetchApprovalLogs(),
+      ]);
+      setScheduleSlots(slots);
+      setApprovalLogs(logs);
+
+      return { success: true, reservationCode: target.reservationCode };
+    } catch (err: any) {
+      return {
+        success: false,
+        error: err?.message || "Failed to update reservation request.",
+      };
+    }
+  };
+
+  const deleteReservation = async (reservationId: string): Promise<ActionResult> => {
+    const target = reservations.find((r) => r.id === reservationId);
+    if (!target) {
+      return { success: false, error: "Reservation record not found." };
+    }
+    const isAdmin = hasPermission(currentUser.role, "RESERVATION_APPROVE");
+    if (!isAdmin) {
+      if (target.userId !== currentUser.id) {
+        return { success: false, error: "Forbidden: You can only delete your own reservations." };
+      }
+      if (target.status === "APPROVED") {
+        return {
+          success: false,
+          error: "Approved bookings cannot be deleted by requesters. Contact an Administrator.",
+        };
+      }
+    }
+
+    try {
+      await db.deleteReservationRecord(reservationId);
+      setReservations((prev) => prev.filter((r) => r.id !== reservationId));
+      setScheduleSlots((prev) => prev.filter((s) => s.id !== reservationId));
+      if (selectedReservationForReview?.id === reservationId) {
+        setSelectedReservationForReview(null);
+      }
+
+      if (isAdmin) {
+        const newLog = await db
+          .insertApprovalLog({
+            reservationId,
+            reservationCode: target.reservationCode,
+            eventName: target.eventName,
+            facilityName: target.facilityName,
+            actorName: currentUser.name,
+            actorRole: currentUser.role,
+            action: "RESERVATION_DELETED",
+            timestamp: new Date().toISOString(),
+            notes: `Reservation ${target.reservationCode} (${target.status}) deleted by administrator.`,
+          })
+          .catch(() => null);
+        if (newLog) setApprovalLogs((prev) => [newLog, ...prev]);
+      }
+
+      return { success: true };
+    } catch (err: any) {
+      return {
+        success: false,
+        error: err?.message || "Failed to delete reservation.",
+      };
+    }
+  };
+
   const markNotificationAsRead = async (id: string) => {
     const target = notifications.find((n) => n.id === id);
     if (!target || target.read || currentUser.id === "guest") return;
@@ -761,19 +1011,61 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
   };
 
+  const deleteNotification = async (id: string): Promise<ActionResult> => {
+    if (!currentUser.id || currentUser.id === "guest") {
+      return { success: false, error: "Not authenticated." };
+    }
+    const target = notifications.find((n) => n.id === id);
+    if (!target) return { success: false, error: "Notification not found." };
+
+    try {
+      await db.deleteNotificationRecord(target, currentUser.id);
+      setNotifications((prev) => prev.filter((n) => n.id !== id));
+      return { success: true };
+    } catch (err: any) {
+      return { success: false, error: err?.message || "Failed to delete notification." };
+    }
+  };
+
+  const clearReadNotifications = async (): Promise<ActionResult> => {
+    if (!currentUser.id || currentUser.id === "guest") {
+      return { success: false, error: "Not authenticated." };
+    }
+    const readItems = notifications.filter((n) => n.read);
+    if (readItems.length === 0) return { success: true };
+
+    try {
+      await db.clearReadNotifications(currentUser.id, readItems);
+      setNotifications((prev) => prev.filter((n) => !n.read));
+      return { success: true };
+    } catch (err: any) {
+      return { success: false, error: err?.message || "Failed to clear notifications." };
+    }
+  };
+
   const unreadNotificationsCount = useMemo(() => {
     return notifications.filter((n) => !n.read).length;
   }, [notifications]);
 
   const openBookingModal = (facilityId?: FacilityId, date?: string, time?: string) => {
+    setEditingReservation(null);
     setPreselectedFacilityId(facilityId || null);
     setPreselectedDate(date || null);
     setPreselectedTime(time || null);
     setIsBookingModalOpen(true);
   };
 
+  const openEditBookingModal = (reservation: Reservation) => {
+    setEditingReservation(reservation);
+    setPreselectedFacilityId(reservation.facilityId);
+    setPreselectedDate(reservation.date);
+    setPreselectedTime(reservation.startTime);
+    setIsBookingModalOpen(true);
+  };
+
   const closeBookingModal = () => {
     setIsBookingModalOpen(false);
+    setEditingReservation(null);
     setPreselectedFacilityId(null);
     setPreselectedDate(null);
     setPreselectedTime(null);
@@ -801,11 +1093,16 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         updateFacilityCapacity,
         updateFacilityDetails,
         resources,
+        createResource,
+        updateResource,
+        deleteResource,
         updateResourceCondition,
         updateResourceQuantity,
         reservations,
         scheduleSlots,
         createReservation,
+        updateReservation,
+        deleteReservation,
         approveReservation,
         rejectReservation,
         cancelReservation,
@@ -813,16 +1110,20 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         notifications,
         markNotificationAsRead,
         markAllNotificationsAsRead,
+        deleteNotification,
+        clearReadNotifications,
         unreadNotificationsCount,
         activeTab,
         setActiveTab,
         selectedFacilityId,
         setSelectedFacilityId,
         isBookingModalOpen,
+        editingReservation,
         preselectedFacilityId,
         preselectedDate,
         preselectedTime,
         openBookingModal,
+        openEditBookingModal,
         closeBookingModal,
         selectedReservationForReview,
         setSelectedReservationForReview,

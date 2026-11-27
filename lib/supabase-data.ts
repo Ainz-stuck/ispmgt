@@ -343,6 +343,81 @@ export async function updateResourceQuantity(
   if (error) throw error;
 }
 
+export async function createResource(
+  data: Omit<ResourceItem, "id">
+): Promise<ResourceItem> {
+  const id = newId("resrc");
+  const totalQuantity = Math.max(0, Math.floor(data.totalQuantity));
+  const availableQuantity = Math.min(
+    Math.max(0, Math.floor(data.availableQuantity)),
+    totalQuantity
+  );
+
+  const { error } = await supabase.from("resources").insert({
+    id,
+    name: data.name.trim(),
+    category: data.category,
+    facility_scope: data.facilityScope || "CAMPUS_WIDE",
+    total_quantity: totalQuantity,
+    available_quantity: availableQuantity,
+    condition: data.condition,
+    unit: data.unit.trim() || "Units",
+  });
+
+  if (error) throw error;
+
+  return {
+    ...data,
+    id,
+    name: data.name.trim(),
+    totalQuantity,
+    availableQuantity,
+    unit: data.unit.trim() || "Units",
+  };
+}
+
+export async function updateResource(
+  resourceId: string,
+  data: Partial<Omit<ResourceItem, "id">>
+): Promise<void> {
+  const updates: Record<string, unknown> = {};
+  if (data.name !== undefined) updates.name = data.name.trim();
+  if (data.category !== undefined) updates.category = data.category;
+  if (data.facilityScope !== undefined) updates.facility_scope = data.facilityScope;
+  if (data.condition !== undefined) updates.condition = data.condition;
+  if (data.unit !== undefined) updates.unit = data.unit.trim() || "Units";
+  if (data.totalQuantity !== undefined) {
+    const safeTotal = Math.max(0, Math.floor(data.totalQuantity));
+    updates.total_quantity = safeTotal;
+    if (data.availableQuantity !== undefined) {
+      updates.available_quantity = Math.min(
+        Math.max(0, Math.floor(data.availableQuantity)),
+        safeTotal
+      );
+    }
+  } else if (data.availableQuantity !== undefined) {
+    updates.available_quantity = Math.max(0, Math.floor(data.availableQuantity));
+  }
+
+  if (Object.keys(updates).length === 0) return;
+
+  const { error } = await supabase
+    .from("resources")
+    .update(updates)
+    .eq("id", resourceId);
+
+  if (error) throw error;
+}
+
+export async function deleteResource(resourceId: string): Promise<void> {
+  const { error } = await supabase
+    .from("resources")
+    .delete()
+    .eq("id", resourceId);
+
+  if (error) throw error;
+}
+
 // ==========================================
 // Reservations, Schedule & Conflict Checker
 // ==========================================
@@ -384,7 +459,7 @@ export async function fetchReservations(): Promise<Reservation[]> {
         requestedMap[r.reservation_id] = [];
       }
       requestedMap[r.reservation_id].push({
-        resourceId: r.resource_id,
+        resourceId: r.resource_id || `deleted-${r.id}`,
         name: r.name,
         quantity: r.quantity,
       });
@@ -673,6 +748,130 @@ export async function cancelReservationRecord(reservationId: string): Promise<vo
   }
 }
 
+export async function updateReservationRecord(
+  reservation: Reservation,
+  data: Omit<
+    Reservation,
+    | "id"
+    | "reservationCode"
+    | "status"
+    | "submittedAt"
+    | "userId"
+    | "userName"
+    | "userRole"
+    | "userEmail"
+    | "department"
+  >,
+  actor: User,
+  scheduleSlots: FacilityScheduleEntry[]
+): Promise<{ success: boolean; conflict?: FacilityScheduleEntry; reservation?: Reservation }> {
+  const conflict = scheduleSlots.find((slot) =>
+    checkTimeConflict(
+      slot,
+      data.facilityId,
+      data.date,
+      data.startTime,
+      data.endTime,
+      reservation.id
+    )
+  );
+
+  if (conflict) {
+    return { success: false, conflict };
+  }
+
+  const { error: updErr } = await supabase
+    .from("reservations")
+    .update({
+      facility_id: data.facilityId,
+      event_name: data.eventName,
+      purpose: data.purpose,
+      date: data.date,
+      start_time: data.startTime,
+      end_time: data.endTime,
+      expected_attendees: data.expectedAttendees,
+    })
+    .eq("id", reservation.id);
+
+  if (updErr) {
+    if (updErr.message?.includes("LEAD_TIME_VIOLATION")) {
+      throw new Error(updErr.message.replace(/^.*LEAD_TIME_VIOLATION:\s*/i, ""));
+    }
+    if (updErr.message?.includes("SCHEDULE_CONFLICT")) {
+      const latestSlots = await fetchFacilitySchedule();
+      const dbConflict = latestSlots.find((slot) =>
+        checkTimeConflict(
+          slot,
+          data.facilityId,
+          data.date,
+          data.startTime,
+          data.endTime,
+          reservation.id
+        )
+      );
+      return { success: false, conflict: dbConflict };
+    }
+    if (updErr.message?.includes("FORBIDDEN")) {
+      throw new Error("Only pending reservations can be edited.");
+    }
+    throw updErr;
+  }
+
+  const { error: delReqErr } = await supabase
+    .from("requested_resources")
+    .delete()
+    .eq("reservation_id", reservation.id);
+  if (delReqErr) throw delReqErr;
+
+  if (data.resources && data.resources.length > 0) {
+    const resourceRows = data.resources.map((res) => ({
+      id: newId("req"),
+      reservation_id: reservation.id,
+      resource_id: res.resourceId,
+      name: res.name,
+      quantity: res.quantity,
+    }));
+    const { error: insReqErr } = await supabase
+      .from("requested_resources")
+      .insert(resourceRows);
+    if (insReqErr) throw insReqErr;
+  }
+
+  await insertApprovalLog({
+    reservationId: reservation.id,
+    reservationCode: reservation.reservationCode,
+    eventName: data.eventName,
+    facilityName: data.facilityName,
+    actorName: actor.name,
+    actorRole: actor.role,
+    action: "RESERVATION_UPDATED",
+    timestamp: new Date().toISOString(),
+    notes: `Pending reservation updated (${data.facilityName} · ${data.date} ${data.startTime}-${data.endTime}).`,
+  }).catch(() => {});
+
+  return {
+    success: true,
+    reservation: {
+      ...reservation,
+      ...data,
+    },
+  };
+}
+
+export async function deleteReservationRecord(reservationId: string): Promise<void> {
+  const { error } = await supabase
+    .from("reservations")
+    .delete()
+    .eq("id", reservationId);
+
+  if (error) {
+    if (error.message?.includes("FORBIDDEN")) {
+      throw new Error("Insufficient permissions to delete this reservation.");
+    }
+    throw error;
+  }
+}
+
 // ==========================================
 // Approval Logs
 // ==========================================
@@ -739,17 +938,24 @@ export async function fetchNotifications(
     query.order("timestamp", { ascending: false }),
     supabase
       .from("notification_reads")
-      .select("notification_id")
+      .select("notification_id, dismissed")
       .eq("user_id", userId),
   ]);
 
   if (notifResult.error || !notifResult.data) return [];
 
-  const readSet = new Set<string>(
-    (readsResult.data || []).map((r: any) => r.notification_id)
-  );
+  const readSet = new Set<string>();
+  const dismissedSet = new Set<string>();
+  for (const r of readsResult.data || []) {
+    readSet.add((r as any).notification_id);
+    if ((r as any).dismissed) {
+      dismissedSet.add((r as any).notification_id);
+    }
+  }
 
-  return notifResult.data.map((n: any) => mapNotification(n, readSet));
+  return notifResult.data
+    .filter((n: any) => !(dismissedSet.has(n.id) && n.user_id !== userId))
+    .map((n: any) => mapNotification(n, readSet));
 }
 
 export async function insertNotification(
@@ -825,6 +1031,59 @@ export async function markAllNotificationsAsRead(
     const rows = broadcastIds.map((notification_id) => ({
       notification_id,
       user_id: userId,
+    }));
+    const { error } = await supabase.from("notification_reads").upsert(rows);
+    if (error) throw error;
+  }
+}
+
+export async function deleteNotificationRecord(
+  notif: SystemNotification,
+  userId: string
+): Promise<void> {
+  if (notif.userId === userId) {
+    const { error } = await supabase
+      .from("notifications")
+      .delete()
+      .eq("id", notif.id);
+    if (error) throw error;
+    return;
+  }
+
+  const { error } = await supabase.from("notification_reads").upsert({
+    notification_id: notif.id,
+    user_id: userId,
+    dismissed: true,
+  });
+  if (error) throw error;
+}
+
+export async function clearReadNotifications(
+  userId: string,
+  readNotifications: SystemNotification[]
+): Promise<void> {
+  if (readNotifications.length === 0) return;
+
+  const personalIds = readNotifications
+    .filter((n) => n.userId === userId)
+    .map((n) => n.id);
+  const broadcastIds = readNotifications
+    .filter((n) => n.userId !== userId)
+    .map((n) => n.id);
+
+  if (personalIds.length > 0) {
+    const { error } = await supabase
+      .from("notifications")
+      .delete()
+      .in("id", personalIds);
+    if (error) throw error;
+  }
+
+  if (broadcastIds.length > 0) {
+    const rows = broadcastIds.map((notification_id) => ({
+      notification_id,
+      user_id: userId,
+      dismissed: true,
     }));
     const { error } = await supabase.from("notification_reads").upsert(rows);
     if (error) throw error;

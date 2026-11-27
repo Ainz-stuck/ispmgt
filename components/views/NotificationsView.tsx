@@ -14,6 +14,7 @@ import {
   Buildings,
   Check,
   ShieldCheck,
+  Trash,
 } from "@phosphor-icons/react";
 
 export function NotificationsView() {
@@ -21,12 +22,39 @@ export function NotificationsView() {
     notifications,
     markNotificationAsRead,
     markAllNotificationsAsRead,
+    deleteNotification,
+    clearReadNotifications,
     unreadNotificationsCount,
     setSelectedReservationForReview,
     reservations,
   } = useApp();
 
   const [activeFilter, setActiveFilter] = useState<string>("ALL");
+  const [busyId, setBusyId] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
+
+  const readCount = notifications.filter((n) => n.read).length;
+
+  const handleDeleteNotification = async (e: React.MouseEvent, id: string) => {
+    e.stopPropagation();
+    setActionError(null);
+    setBusyId(id);
+    const res = await deleteNotification(id);
+    setBusyId(null);
+    if (!res.success) {
+      setActionError(res.error || "Unable to remove notification.");
+    }
+  };
+
+  const handleClearRead = async () => {
+    setActionError(null);
+    setBusyId("ALL_READ");
+    const res = await clearReadNotifications();
+    setBusyId(null);
+    if (!res.success) {
+      setActionError(res.error || "Unable to clear read notifications.");
+    }
+  };
 
   const filtered = notifications.filter((n) => {
     if (activeFilter === "ALL") return true;
@@ -76,17 +104,37 @@ export function NotificationsView() {
           </p>
         </div>
 
-        {unreadNotificationsCount > 0 && (
-          <Button
-            variant="secondary"
-            size="sm"
-            onClick={markAllNotificationsAsRead}
-            icon={<Check size={14} weight="bold" />}
-          >
-            Mark All as Read ({unreadNotificationsCount})
-          </Button>
-        )}
+        <div className="flex flex-wrap items-center gap-2">
+          {unreadNotificationsCount > 0 && (
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={markAllNotificationsAsRead}
+              icon={<Check size={14} weight="bold" />}
+            >
+              Mark All as Read ({unreadNotificationsCount})
+            </Button>
+          )}
+          {readCount > 0 && (
+            <Button
+              variant="ghost"
+              size="sm"
+              loading={busyId === "ALL_READ"}
+              onClick={handleClearRead}
+              icon={<Trash size={14} weight="bold" />}
+              className="text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/30"
+            >
+              Clear Read ({readCount})
+            </Button>
+          )}
+        </div>
       </div>
+
+      {actionError && (
+        <div className="p-3 rounded-xl bg-rose-50 dark:bg-rose-950/30 border border-rose-200 dark:border-rose-800 text-xs text-rose-700 dark:text-rose-300 font-medium">
+          {actionError}
+        </div>
+      )}
 
       {/* Filter Tabs */}
       <div
@@ -177,12 +225,24 @@ export function NotificationsView() {
                   )}
                 </div>
 
-                {!notif.read && (
-                  <span
-                    className="w-2 h-2 rounded-full bg-[#0F5132] dark:bg-emerald-400 shrink-0 mt-2"
-                    title="Unread notification"
-                  />
-                )}
+                <div className="flex items-center gap-2 shrink-0">
+                  {!notif.read && (
+                    <span
+                      className="w-2 h-2 rounded-full bg-[#0F5132] dark:bg-emerald-400 shrink-0"
+                      title="Unread notification"
+                    />
+                  )}
+                  <button
+                    type="button"
+                    disabled={busyId === notif.id}
+                    onClick={(e) => handleDeleteNotification(e, notif.id)}
+                    aria-label={`Remove notification: ${notif.title}`}
+                    title="Delete / Dismiss notification"
+                    className="min-h-[36px] min-w-[36px] rounded-lg flex items-center justify-center text-zinc-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition-colors disabled:opacity-40"
+                  >
+                    <Trash size={15} />
+                  </button>
+                </div>
               </div>
             ))
           )}
