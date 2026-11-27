@@ -1,7 +1,30 @@
+import fs from "node:fs";
+import path from "node:path";
 import { createClient } from "@supabase/supabase-js";
 
-const supabaseUrl = "https://eppnkgfrxmjxdzrzimtw.supabase.co";
-const anonKey = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVwcG5rZ2ZyeG1qeGR6cnppbXR3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTU1MDIzMDcsImV4cCI6MjExMTA3ODMwN30.Ux0BSM7Yba0OjcT0ur8KsHzXv--KbyA-wzHRPmRs3YI";
+function loadEnvLocal() {
+  const envPath = path.resolve(process.cwd(), ".env.local");
+  if (!fs.existsSync(envPath)) return;
+  for (const line of fs.readFileSync(envPath, "utf8").split(/\r?\n/)) {
+    if (!line || line.startsWith("#") || !line.includes("=")) continue;
+    const idx = line.indexOf("=");
+    const k = line.slice(0, idx).trim();
+    const v = line.slice(idx + 1).trim().replace(/^['"]|['"]$/g, "");
+    if (!process.env[k]) process.env[k] = v;
+  }
+}
+
+loadEnvLocal();
+
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+
+if (!supabaseUrl || !anonKey) {
+  console.error(
+    "Missing NEXT_PUBLIC_SUPABASE_URL or NEXT_PUBLIC_SUPABASE_ANON_KEY in environment or .env.local."
+  );
+  process.exit(1);
+}
 
 const client = createClient(supabaseUrl, anonKey);
 

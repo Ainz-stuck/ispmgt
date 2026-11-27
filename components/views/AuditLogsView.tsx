@@ -3,6 +3,7 @@
 import React, { useMemo, useState } from "react";
 import { useApp } from "../../context/AppContext";
 import { hasPermission, ROLE_SHORT_LABELS } from "../../lib/rbac";
+import { escapeCsvCell } from "../../lib/utils";
 import { Card, CardBody, CardHeader } from "../ui/Card";
 import { RoleBadge } from "../ui/Badge";
 import { Button } from "../ui/Button";
@@ -85,11 +86,6 @@ export function AuditLogsView() {
       "Target / Facility",
       "Notes",
     ];
-    const escapeCell = (val: string) => {
-      const raw = String(val ?? "");
-      const safe = /^[=+\-@\t\r]/.test(raw) ? `'${raw}` : raw;
-      return `"${safe.replace(/"/g, '""')}"`;
-    };
     const rows = filteredLogs.map((log) =>
       [
         log.timestamp,
@@ -101,7 +97,7 @@ export function AuditLogsView() {
         log.facilityName,
         log.notes,
       ]
-        .map(escapeCell)
+        .map(escapeCsvCell)
         .join(",")
     );
     const csv = [header.join(","), ...rows].join("\n");

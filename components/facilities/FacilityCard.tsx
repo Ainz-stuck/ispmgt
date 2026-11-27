@@ -3,6 +3,7 @@
 import React from "react";
 import Image from "next/image";
 import { Facility } from "../../types";
+import { safeFacilityImageSrc } from "../../lib/utils";
 import { StatusBadge } from "../ui/Badge";
 import { Button } from "../ui/Button";
 import {
@@ -33,10 +34,10 @@ export function FacilityCard({
         {/* Facility Image with Bezel & Badges */}
         <div className="relative h-48 w-full overflow-hidden bg-zinc-100 dark:bg-zinc-800">
           <Image
-            src={facility.image}
+            src={safeFacilityImageSrc(facility.image)}
             alt={facility.name}
             fill
-            unoptimized={facility.image.startsWith("data:")}
+            unoptimized={!safeFacilityImageSrc(facility.image).startsWith("/")}
             sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
             className="object-cover group-hover/card:scale-105 transition-transform duration-700 ease-[cubic-bezier(0.32,0.72,0,1)]"
           />

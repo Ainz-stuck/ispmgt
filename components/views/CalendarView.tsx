@@ -3,7 +3,7 @@
 import React, { useState, useMemo } from "react";
 import { useApp } from "../../context/AppContext";
 import { FacilityId, FacilityScheduleEntry, Reservation } from "../../types";
-import { getLocalYMD } from "../../lib/utils";
+import { getLocalYMD, slotOverlapsHour } from "../../lib/utils";
 import { StatusBadge } from "../ui/Badge";
 import { Button } from "../ui/Button";
 import { Card, CardHeader, CardBody } from "../ui/Card";
@@ -27,16 +27,6 @@ import {
 } from "@phosphor-icons/react";
 
 type CalendarViewMode = "MONTH" | "WEEK" | "DAY";
-
-function slotOverlapsHour(startTime: string, endTime: string, hourInt: number): boolean {
-  const [sh, sm] = startTime.split(":").map(Number);
-  const [eh, em] = endTime.split(":").map(Number);
-  const startMins = (Number.isFinite(sh) ? sh : 0) * 60 + (Number.isFinite(sm) ? sm : 0);
-  const endMins = (Number.isFinite(eh) ? eh : 0) * 60 + (Number.isFinite(em) ? em : 0);
-  const slotStart = hourInt * 60;
-  const slotEnd = (hourInt + 1) * 60;
-  return startMins < slotEnd && endMins > slotStart;
-}
 
 // Signature Color Profiles per Facility
 const VENUE_THEMES: Record<

@@ -8,6 +8,12 @@ import { StatusBadge } from "../ui/Badge";
 import { Button } from "../ui/Button";
 import { useApp } from "../../context/AppContext";
 import {
+  ALLOWED_FACILITY_IMAGE_MIME,
+  MAX_FACILITY_IMAGE_BYTES,
+  safeFacilityImageSrc,
+  validateFacilityImageUrl,
+} from "../../lib/utils";
+import {
   Users,
   Clock,
   EnvelopeSimple,
@@ -92,20 +98,34 @@ export function FacilityDetailModal({
     .sort((a, b) => a.date.localeCompare(b.date))
     .slice(0, 4);
 
-  // File upload reader for custom photo
+  // File upload reader for custom photo (bounded PNG/JPEG/WebP <= 1 MB)
   const handleImageFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (file && editForm) {
-      const reader = new FileReader();
-      reader.onload = (event) => {
-        if (event.target?.result) {
-          setEditForm((prev) =>
-            prev ? { ...prev, image: event.target!.result as string } : null
-          );
-        }
-      };
-      reader.readAsDataURL(file);
+    if (!file || !editForm) return;
+    if (!ALLOWED_FACILITY_IMAGE_MIME.has(file.type)) {
+      setSaveError("Unsupported image type. Upload a PNG, JPEG, or WebP file.");
+      e.target.value = "";
+      return;
     }
+    if (file.size > MAX_FACILITY_IMAGE_BYTES) {
+      setSaveError("Uploaded image exceeds the 1 MB maximum size.");
+      e.target.value = "";
+      return;
+    }
+    setSaveError(null);
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const result = event.target?.result;
+      if (typeof result === "string") {
+        const check = validateFacilityImageUrl(result);
+        if (!check.valid || !check.sanitized) {
+          setSaveError(check.error || "Invalid uploaded image.");
+          return;
+        }
+        setEditForm((prev) => (prev ? { ...prev, image: check.sanitized! } : null));
+      }
+    };
+    reader.readAsDataURL(file);
   };
 
   // Add & Remove Handlers for Resources
@@ -183,12 +203,18 @@ export function FacilityDetailModal({
       setSaveError("Seating capacity must be at least 1.");
       return;
     }
+    const imageCheck = validateFacilityImageUrl(editForm.image);
+    if (!imageCheck.valid || !imageCheck.sanitized) {
+      setSaveError(imageCheck.error || "Invalid facility image URL.");
+      return;
+    }
     setIsSaving(true);
     setSaveError(null);
     const sanitizedForm = {
       ...editForm,
       name: editForm.name.trim(),
       code: editForm.code.trim(),
+      image: imageCheck.sanitized,
     };
     const res = await updateFacilityDetails(facility.id, sanitizedForm);
     setIsSaving(false);
@@ -397,11 +423,11 @@ export function FacilityDetailModal({
               {/* Preview Thumbnail */}
               <div className="lg:col-span-5 relative h-48 w-full rounded-xl overflow-hidden border border-zinc-200 dark:border-zinc-700 bg-zinc-200 dark:bg-zinc-800">
                 <Image
-                  src={editForm.image}
+                  src={safeFacilityImageSrc(editForm.image)}
                   alt={editForm.name}
                   fill
                   className="object-cover"
-                  unoptimized={editForm.image.startsWith("data:")}
+                  unoptimized={!safeFacilityImageSrc(editForm.image).startsWith("/")}
                 />
                 <div className="absolute bottom-2 left-2 right-2 px-2.5 py-1 rounded-lg bg-black/70 backdrop-blur-md text-[10px] text-white font-mono truncate">
                   Current: {editForm.image}
@@ -451,7 +477,7 @@ export function FacilityDetailModal({
                     type="file"
                     ref={fileInputRef}
                     onChange={handleImageFileUpload}
-                    accept="image/*"
+                    accept="image/png,image/jpeg,image/webp"
                     aria-label="Upload custom facility image file"
                     className="hidden"
                   />
@@ -797,12 +823,12 @@ export function FacilityDetailModal({
               {/* Facility Photo Header */}
               <div className="relative h-56 sm:h-64 lg:h-64 w-full rounded-2xl overflow-hidden bg-zinc-100 dark:bg-zinc-800 shadow-sm border border-zinc-200/80 dark:border-zinc-800">
                 <Image
-                  src={facility.image}
+                  src={safeFacilityImageSrc(facility.image)}
                   alt={facility.name}
                   fill
                   className="object-cover"
                   priority
-                  unoptimized={facility.image.startsWith("data:")}
+                  unoptimized={!safeFacilityImageSrc(facility.image).startsWith("/")}
                 />
                 <div className="absolute top-3 right-3 z-10">
                   <StatusBadge status={facility.status} />

@@ -4,6 +4,7 @@ import React, { useState, useEffect } from "react";
 import Image from "next/image";
 import { useApp } from "../../context/AppContext";
 import { Facility, FacilityScheduleEntry, RequestedResource } from "../../types";
+import { safeFacilityImageSrc } from "../../lib/utils";
 import {
   getMinReservationDate,
   hasPermission,
@@ -516,10 +517,10 @@ export function ReservationModal() {
                 >
                   <div className="relative w-20 h-20 rounded-lg overflow-hidden shrink-0 bg-zinc-100">
                     <Image
-                      src={f.image}
+                      src={safeFacilityImageSrc(f.image)}
                       alt={f.name}
                       fill
-                      unoptimized={f.image.startsWith("data:")}
+                      unoptimized={!safeFacilityImageSrc(f.image).startsWith("/")}
                       className="object-cover"
                     />
                   </div>
