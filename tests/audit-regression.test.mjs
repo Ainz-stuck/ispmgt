@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   canAccessTab,
+  getCampusDateYMD,
   getMinReservationDate,
   getRoleQueuePriority,
   hasPermission,
@@ -148,4 +149,10 @@ test("computeLeadDays parses bare submittedAt timestamps as UTC consistently", (
   assert.ok(bareUtc !== null && explicitUtc !== null);
   assert.equal(bareUtc, explicitUtc);
   assert.equal(computeLeadDays("", "2026-11-25 14:32"), null);
+});
+
+test("getCampusDateYMD uses Asia/Manila date across UTC day rollovers", () => {
+  // 2026-11-28T20:00:00Z is already 2026-11-29 04:00 in Asia/Manila (UTC+8).
+  assert.equal(getCampusDateYMD(new Date("2026-11-28T20:00:00Z")), "2026-11-29");
+  assert.equal(getCampusDateYMD(new Date("2026-11-28T15:59:59Z")), "2026-11-28");
 });

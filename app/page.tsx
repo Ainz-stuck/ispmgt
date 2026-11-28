@@ -1,7 +1,7 @@
 "use client";
 
 import React from "react";
-import { AuthProvider } from "../context/AuthContext";
+import { AuthProvider, useAuth } from "../context/AuthContext";
 import { AppProvider, useApp } from "../context/AppContext";
 import { Navbar } from "../components/layout/Navbar";
 import { Footer } from "../components/layout/Footer";
@@ -40,6 +40,7 @@ function MainAppShell() {
     dataError,
     clearDataError,
   } = useApp();
+  const { authNotice, clearAuthNotice } = useAuth();
 
   if (isAuthLoading) {
     return (
@@ -96,15 +97,18 @@ function MainAppShell() {
           tabIndex={-1}
           className="flex-1 max-w-7xl 2xl:max-w-[1600px] w-full mx-auto px-3.5 sm:px-6 lg:px-8 2xl:px-12 pt-4 sm:pt-6 lg:pt-8 pb-24 md:pb-8 focus:outline-none"
         >
-          {dataError && (
+          {(dataError || authNotice) && (
             <div
               role="alert"
               className="mb-4 flex items-center justify-between gap-3 rounded-xl border border-rose-300 bg-rose-50 px-4 py-3 text-xs font-medium text-rose-800 dark:border-rose-800 dark:bg-rose-950/50 dark:text-rose-200"
             >
-              <span>{dataError}</span>
+              <span>{dataError || authNotice}</span>
               <button
                 type="button"
-                onClick={clearDataError}
+                onClick={() => {
+                  if (dataError) clearDataError();
+                  if (authNotice) clearAuthNotice();
+                }}
                 className="shrink-0 font-semibold underline hover:no-underline"
               >
                 Dismiss

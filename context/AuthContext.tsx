@@ -63,6 +63,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [authView, setAuthViewState] = useState<AuthView>("landing");
   const isExplicitLoginRef = useRef(false);
   const hasLoadedProfileRef = useRef(false);
+  const isPasswordRecoveryRef = useRef(false);
 
   const setAuthView = useCallback((view: AuthView, replace = false) => {
     setAuthViewState(view);
@@ -129,51 +130,29 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [supabaseUser, loadUserProfile]);
 
   useEffect(() => {
-    let recoveryMode = false;
+    const isUrlRecovery =
+      typeof window !== "undefined" &&
+      window.location.hash.includes("type=recovery");
+    isPasswordRecoveryRef.current = isUrlRecovery;
 
-    // 1. Initial session check
-    supabase.auth.getSession().then((res) => {
-      const activeSession = res?.data?.session;
-      setSession(activeSession);
-      setSupabaseUser(activeSession?.user ?? null);
-
-      const isUrlRecovery =
-        typeof window !== "undefined" &&
-        window.location.hash.includes("type=recovery");
-
-      if (isUrlRecovery) {
-        recoveryMode = true;
-        setIsPasswordRecovery(true);
-        setAuthView("forgot-password");
-        setIsLoading(false);
-        return;
-      }
-
-      if (activeSession?.user) {
-        loadUserProfile(activeSession.user.id).finally(() => setIsLoading(false));
-      } else {
-        if (typeof window !== "undefined") {
-          const authParam = new URLSearchParams(window.location.search).get("auth") as AuthView | null;
-          if (authParam && VALID_UNAUTH_VIEWS.has(authParam)) {
-            setAuthViewState(authParam);
-          }
-        }
-        setIsLoading(false);
-      }
-    });
+    if (isUrlRecovery) {
+      setIsPasswordRecovery(true);
+      setAuthView("forgot-password");
+      setIsLoading(false);
+    }
 
     const handlePopState = () => {
       if (typeof window === "undefined") return;
       const authParam = new URLSearchParams(window.location.search).get("auth") as AuthView | null;
       if (authParam && VALID_UNAUTH_VIEWS.has(authParam)) {
         setAuthViewState(authParam);
-      } else if (!recoveryMode) {
+      } else if (!isPasswordRecoveryRef.current) {
         setAuthViewState((prev) => (prev === "app" ? "app" : "landing"));
       }
     };
     window.addEventListener("popstate", handlePopState);
 
-    // 2. Auth state change listener
+    // Single auth state listener handles INITIAL_SESSION, sign-ins, refreshes, and recovery
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange(async (event: AuthChangeEvent, activeSession: Session | null) => {
@@ -181,7 +160,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setSupabaseUser(activeSession?.user ?? null);
 
       if (event === "PASSWORD_RECOVERY") {
-        recoveryMode = true;
+        isPasswordRecoveryRef.current = true;
         setIsPasswordRecovery(true);
         setIsAuthenticated(false);
         setAuthView("forgot-password");
@@ -189,7 +168,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return;
       }
 
-      if (recoveryMode) {
+      if (isPasswordRecoveryRef.current) {
         setIsLoading(false);
         return;
       }
@@ -204,6 +183,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         hasLoadedProfileRef.current = false;
         setCurrentUser(null);
         setIsAuthenticated(false);
+        if (event === "INITIAL_SESSION" && typeof window !== "undefined") {
+          const authParam = new URLSearchParams(window.location.search).get("auth") as AuthView | null;
+          if (authParam && VALID_UNAUTH_VIEWS.has(authParam)) {
+            setAuthViewState(authParam);
+          }
+        }
       }
       setIsLoading(false);
     });
@@ -373,6 +358,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       return { success: false, error: error.message };
     }
 
+    isPasswordRecoveryRef.current = false;
     setIsPasswordRecovery(false);
     if (typeof window !== "undefined" && window.location.hash) {
       window.history.replaceState(null, "", window.location.pathname);
@@ -414,7 +400,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const logout = async () => {
+    isPasswordRecoveryRef.current = false;
     setIsPasswordRecovery(false);
+    setAuthNotice(null);
     hasLoadedProfileRef.current = false;
     await supabase.auth.signOut();
     setCurrentUser(null);

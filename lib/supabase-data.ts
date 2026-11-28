@@ -413,35 +413,62 @@ export async function fetchResources(): Promise<ResourceItem[]> {
 }
 
 export async function createResource(
-  data: Omit<ResourceItem, "id">
-): Promise<ResourceItem> {
+  data: Omit<ResourceItem, "id">,
+  actor: User
+): Promise<{ resource: ResourceItem; log: ApprovalLog }> {
   const id = newId("resrc");
+  const logId = newId("log");
+  const name = data.name.trim();
+  const facilityScope = data.facilityScope || "CAMPUS_WIDE";
+  const unit = data.unit.trim() || "Units";
   const totalQuantity = Math.max(0, Math.floor(data.totalQuantity));
   const availableQuantity = Math.min(
     Math.max(0, Math.floor(data.availableQuantity)),
     totalQuantity
   );
 
-  const { error } = await supabase.from("resources").insert({
-    id,
-    name: data.name.trim(),
-    category: data.category,
-    facility_scope: data.facilityScope || "CAMPUS_WIDE",
-    total_quantity: totalQuantity,
-    available_quantity: availableQuantity,
-    condition: data.condition,
-    unit: data.unit.trim() || "Units",
+  const { error } = await supabase.rpc("create_resource_tx", {
+    p_id: id,
+    p_name: name,
+    p_category: data.category,
+    p_facility_scope: facilityScope,
+    p_total_quantity: totalQuantity,
+    p_available_quantity: availableQuantity,
+    p_condition: data.condition,
+    p_unit: unit,
+    p_log_id: logId,
   });
 
-  if (error) throw error;
+  if (error) {
+    if (error.message?.includes("FORBIDDEN")) {
+      throw new Error(error.message.replace(/^.*FORBIDDEN:\s*/i, ""));
+    }
+    throw error;
+  }
 
   return {
-    ...data,
-    id,
-    name: data.name.trim(),
-    totalQuantity,
-    availableQuantity,
-    unit: data.unit.trim() || "Units",
+    resource: {
+      ...data,
+      id,
+      name,
+      facilityScope,
+      totalQuantity,
+      availableQuantity,
+      unit,
+    },
+    log: {
+      id: logId,
+      reservationId: `resource-${id}`,
+      reservationCode: data.category,
+      eventName: `Equipment Added: ${name}`,
+      facilityName:
+        facilityScope === "CAMPUS_WIDE" ? "Campus-Wide Warehouse" : facilityScope,
+      actorName: actor.name,
+      actorRole: actor.role,
+      action: "RESOURCE_CREATED",
+      timestamp: new Date().toISOString().replace("T", " ").substring(0, 16),
+      notes: `Created ${name} (${availableQuantity}/${totalQuantity} ${unit}, ${data.condition}).`,
+    },
   };
 }
 
@@ -536,21 +563,27 @@ export async function fetchFacilitySchedule(): Promise<FacilityScheduleEntry[]> 
 }
 
 export async function fetchReservations(): Promise<Reservation[]> {
-  // shortcut: loads all reservations in pages of 1000; aggregate in SQL if campus exceeds ~10k rows.
+  // shortcut: loads all reservations via range pagination; move ReportsView aggregation to SQL if campus exceeds ~10k rows.
   const PAGE_SIZE = 1000;
   const allRows: ReservationRow[] = [];
 
-  for (let from = 0; ; from += PAGE_SIZE) {
-    const { data, error } = await supabase
+  for (let from = 0; ; ) {
+    const { data, count, error } = await supabase
       .from("reservations")
-      .select("*, facilities(name), profiles(name, role, email, department), requested_resources(id, resource_id, name, quantity)")
+      .select(
+        "*, facilities(name), profiles(name, role, email, department), requested_resources(id, resource_id, name, quantity)",
+        { count: "exact" }
+      )
       .order("submitted_at", { ascending: false })
       .range(from, from + PAGE_SIZE - 1);
 
     if (error) throw error;
     const rows = (data || []) as ReservationRow[];
     allRows.push(...rows);
-    if (rows.length < PAGE_SIZE) break;
+    from += rows.length;
+    if (rows.length === 0 || (count !== null ? allRows.length >= count : rows.length < PAGE_SIZE)) {
+      break;
+    }
   }
 
   return allRows.map((r) => {

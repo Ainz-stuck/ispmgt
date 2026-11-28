@@ -275,22 +275,24 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     return () => window.removeEventListener("popstate", handlePopState);
   }, [auth.isAuthenticated, auth.currentUser]);
 
-  // Fetch all data from Supabase
+  // Fetch all data from Supabase (re-runs only on auth identity/role changes)
+  const authUserId = auth.currentUser?.id;
+  const authUserRole = auth.currentUser?.role;
   const loadAppData = useCallback(async () => {
     setDataError(null);
     try {
       const facs = await db.fetchFacilities();
       setFacilities(facs);
 
-      if (auth.isAuthenticated && auth.currentUser) {
-        const canManageUsers = hasPermission(auth.currentUser.role, "USERS_MANAGE");
+      if (auth.isAuthenticated && authUserId && authUserRole) {
+        const canManageUsers = hasPermission(authUserRole, "USERS_MANAGE");
         const [resrcs, users, rsvps, slots, logs, notifs] = await Promise.all([
           db.fetchResources(),
           canManageUsers ? db.fetchAllUsers() : Promise.resolve([]),
           db.fetchReservations(),
           db.fetchFacilitySchedule(),
           db.fetchApprovalLogs(),
-          db.fetchNotifications(auth.currentUser.id, auth.currentUser.role),
+          db.fetchNotifications(authUserId, authUserRole),
         ]);
         setResources(resrcs);
         setAllUsers(users);
@@ -310,7 +312,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       console.error("Error loading app data from Supabase:", err);
       setDataError(getErrorMessage(err, "Failed to load campus data from database. Please refresh."));
     }
-  }, [auth.isAuthenticated, auth.currentUser]);
+  }, [auth.isAuthenticated, authUserId, authUserRole]);
 
   useEffect(() => {
     loadAppData();
@@ -363,7 +365,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     }
     try {
       await db.updateUserProfile(currentUser.id, data);
-      await auth.refreshCurrentUser();
+      auth.setCurrentUser((prev) => (prev ? { ...prev, ...data } : prev));
       setAllUsers((prev) =>
         prev.map((u) => (u.id === currentUser.id ? { ...u, ...data } : u))
       );
@@ -481,25 +483,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       return { success: false, error: "Forbidden: Administrator privileges required." };
     }
     try {
-      const created = await db.createResource(data);
+      const { resource: created, log: newLog } = await db.createResource(data, currentUser);
       setResources((prev) =>
         [...prev, created].sort((a, b) => a.name.localeCompare(b.name))
       );
-
-      const newLog = await db.insertApprovalLog({
-        reservationId: `resource-${created.id}`,
-        reservationCode: created.category,
-        eventName: `Equipment Added: ${created.name}`,
-        facilityName:
-          created.facilityScope === "CAMPUS_WIDE"
-            ? "Campus-Wide Warehouse"
-            : created.facilityScope,
-        actorName: currentUser.name,
-        actorRole: currentUser.role,
-        action: "RESOURCE_CREATED",
-        timestamp: new Date().toISOString(),
-        notes: `Created ${created.name} (${created.availableQuantity}/${created.totalQuantity} ${created.unit}, ${created.condition}).`,
-      });
       setApprovalLogs((prev) => [newLog, ...prev]);
 
       return { success: true };

@@ -329,6 +329,20 @@ export interface Database {
         };
         Returns: undefined;
       };
+      create_resource_tx: {
+        Args: {
+          p_id: string;
+          p_name: string;
+          p_category: string;
+          p_facility_scope: string;
+          p_total_quantity: number;
+          p_available_quantity: number;
+          p_condition: string;
+          p_unit: string;
+          p_log_id: string;
+        };
+        Returns: undefined;
+      };
     };
   };
 }

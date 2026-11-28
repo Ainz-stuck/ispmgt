@@ -19,8 +19,8 @@ import {
 } from "@phosphor-icons/react";
 
 export function LandingPage() {
-  const { setAuthView, facilities } = useApp();
-  const venueCount = facilities.length || 6;
+  const { setAuthView, facilities, dataError, clearDataError } = useApp();
+  const venueCount = dataError ? facilities.length : facilities.length || 6;
 
   return (
     <div className="min-h-screen flex flex-col bg-[#FAFAFB] dark:bg-[#09090B] text-zinc-900 dark:text-zinc-50 font-sans selection:bg-[#0F5132] selection:text-white">
@@ -335,6 +335,21 @@ export function LandingPage() {
           </div>
 
           {/* 6 Facilities Cards in Double-Bezel Grid */}
+          {dataError && (
+            <div
+              role="alert"
+              className="flex items-center justify-between gap-3 rounded-xl border border-rose-300 bg-rose-50 px-4 py-3 text-xs font-medium text-rose-800 dark:border-rose-800 dark:bg-rose-950/50 dark:text-rose-200"
+            >
+              <span>{dataError}</span>
+              <button
+                type="button"
+                onClick={clearDataError}
+                className="shrink-0 font-semibold underline hover:no-underline"
+              >
+                Dismiss
+              </button>
+            </div>
+          )}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
             {facilities.map((f) => (
               <FacilityCard

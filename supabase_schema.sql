@@ -21,6 +21,7 @@ DROP FUNCTION IF EXISTS public.delete_reservation_tx(TEXT, TEXT);
 DROP FUNCTION IF EXISTS public.admin_update_user_access_tx(UUID, TEXT, TEXT, TEXT, TEXT);
 DROP FUNCTION IF EXISTS public.admin_update_facility_tx(TEXT, JSONB, TEXT, TEXT, TEXT);
 DROP FUNCTION IF EXISTS public.delete_resource_tx(TEXT, TEXT);
+DROP FUNCTION IF EXISTS public.create_resource_tx(TEXT, TEXT, TEXT, TEXT, INT, INT, TEXT, TEXT, TEXT);
 
 -- 1. Profiles table
 CREATE TABLE IF NOT EXISTS public.profiles (
@@ -1329,6 +1330,56 @@ BEGIN
     'RESOURCE_DELETED',
     now(),
     'Removed ' || v_res.name || ' from active inventory catalog.'
+  );
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.create_resource_tx(
+  p_id TEXT,
+  p_name TEXT,
+  p_category TEXT,
+  p_facility_scope TEXT,
+  p_total_quantity INT,
+  p_available_quantity INT,
+  p_condition TEXT,
+  p_unit TEXT,
+  p_log_id TEXT
+)
+RETURNS VOID
+LANGUAGE plpgsql
+SECURITY INVOKER
+SET search_path = ''
+AS $$
+DECLARE
+  v_uid UUID := (SELECT auth.uid());
+  v_actor RECORD;
+BEGIN
+  IF NOT public.is_admin() THEN
+    RAISE EXCEPTION 'FORBIDDEN: Active administrator privileges required.';
+  END IF;
+
+  SELECT name, role INTO v_actor FROM public.profiles WHERE id = v_uid;
+
+  INSERT INTO public.resources (
+    id, name, category, facility_scope, total_quantity, available_quantity, condition, unit
+  ) VALUES (
+    p_id, p_name, p_category, p_facility_scope, p_total_quantity, p_available_quantity, p_condition, p_unit
+  );
+
+  INSERT INTO public.approval_logs (
+    id, reservation_id, reservation_code, event_name, facility_name,
+    actor_name, actor_role, action, timestamp, notes
+  ) VALUES (
+    p_log_id,
+    'resource-' || p_id,
+    p_category,
+    'Equipment Added: ' || p_name,
+    CASE WHEN p_facility_scope = 'CAMPUS_WIDE' THEN 'Campus-Wide Warehouse' ELSE p_facility_scope END,
+    v_actor.name,
+    v_actor.role,
+    'RESOURCE_CREATED',
+    now(),
+    'Created ' || p_name || ' (' || p_available_quantity::TEXT || '/' || p_total_quantity::TEXT || ' ' || p_unit || ', ' || p_condition || ').'
   );
 END;
 $$;

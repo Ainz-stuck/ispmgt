@@ -4,6 +4,7 @@ import React, { useState } from "react";
 import Image from "next/image";
 import { useApp } from "../../context/AppContext";
 import { hasPermission, getRoleQueuePriority } from "../../lib/rbac";
+import { getLocalYMD } from "../../lib/utils";
 import { FacilityCard } from "../facilities/FacilityCard";
 import { StatusBadge, RoleBadge } from "../ui/Badge";
 import { Button } from "../ui/Button";
@@ -58,9 +59,12 @@ export function DashboardView() {
     return (b.submittedAt || "").localeCompare(a.submittedAt || "");
   });
 
+  const todayYMD = getLocalYMD();
   const pendingCount = reservations.filter((r) => r.status === "PENDING").length;
   const userPendingCount = userReservations.filter((r) => r.status === "PENDING").length;
-  const upcomingCount = userReservations.filter((r) => r.status === "APPROVED").length;
+  const upcomingCount = userReservations.filter(
+    (r) => r.status === "APPROVED" && r.date >= todayYMD
+  ).length;
 
   const filteredFacilities = facilities.filter(
     (f) =>

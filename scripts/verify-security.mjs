@@ -31,10 +31,17 @@ async function main() {
   const anonProf = await anon.from("profiles").select("id");
   const anonRes = await anon.from("reservations").select("id");
 
+  const studentEmail = process.env.AUDIT_STUDENT_EMAIL;
+  const studentPassword = process.env.AUDIT_STUDENT_PASSWORD;
+  if (!studentEmail || !studentPassword) {
+    console.error("Missing AUDIT_STUDENT_EMAIL or AUDIT_STUDENT_PASSWORD.");
+    process.exit(1);
+  }
+
   const stu = createClient(url, anonKey, { auth: { persistSession: false } });
   const stuLogin = await stu.auth.signInWithPassword({
-    email: process.env.AUDIT_STUDENT_EMAIL || "alex.vance@university.edu",
-    password: process.env.AUDIT_STUDENT_PASSWORD || "password123",
+    email: studentEmail,
+    password: studentPassword,
   });
   if (stuLogin.error) throw stuLogin.error;
   const stuId = stuLogin.data.user.id;

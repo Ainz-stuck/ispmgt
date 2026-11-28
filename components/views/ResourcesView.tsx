@@ -81,19 +81,24 @@ export function ResourcesView() {
       safeTotal
     );
 
-    const payload = {
+    const basePayload = {
       name: name.trim(),
       category,
       facilityScope,
       unit: unit.trim() || "Units",
       condition: newCondition,
       totalQuantity: safeTotal,
-      availableQuantity: safeAvailable,
     };
 
     const result = selectedResource
-      ? await updateResource(selectedResource.id, payload)
-      : await createResource(payload);
+      ? await updateResource(selectedResource.id, {
+          ...basePayload,
+          // Omit availableQuantity unless explicitly changed so concurrent booking deductions aren't clobbered.
+          ...(safeAvailable !== selectedResource.availableQuantity
+            ? { availableQuantity: safeAvailable }
+            : {}),
+        })
+      : await createResource({ ...basePayload, availableQuantity: safeAvailable });
 
     setIsSaving(false);
     if (!result.success) {

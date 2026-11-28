@@ -107,21 +107,30 @@ export function isInstitutionalRegistrationEmail(email: string): boolean {
   return normalized.endsWith(CHMSU_EMAIL_DOMAIN) && normalized.length > CHMSU_EMAIL_DOMAIN.length + 1;
 }
 
-export function getMinReservationDate(role: UserRole | undefined, baseDate: Date = new Date()): string {
-  const d = new Date(baseDate.getFullYear(), baseDate.getMonth(), baseDate.getDate());
+export function getCampusDateYMD(now: Date = new Date()): string {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Manila",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(now);
+}
+
+export function getMinReservationDate(role: UserRole | undefined, baseDate?: Date): string {
+  const [y, m, day] = baseDate
+    ? [baseDate.getFullYear(), baseDate.getMonth() + 1, baseDate.getDate()]
+    : getCampusDateYMD().split("-").map(Number);
+  const d = new Date(Date.UTC(y, m - 1, day));
   if (!hasPermission(role, "RESERVATION_BYPASS_LEAD_TIME")) {
-    d.setDate(d.getDate() + STUDENT_MIN_LEAD_DAYS);
+    d.setUTCDate(d.getUTCDate() + STUDENT_MIN_LEAD_DAYS);
   }
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  return `${y}-${m}-${day}`;
+  return d.toISOString().slice(0, 10);
 }
 
 export function validateReservationLeadTime(
   role: UserRole | undefined,
   dateStr: string,
-  baseDate: Date = new Date()
+  baseDate?: Date
 ): { valid: boolean; minDate: string; message?: string } {
   const minDate = getMinReservationDate(role, baseDate);
   if (!dateStr) {
