@@ -19,7 +19,7 @@ import { UserManagementView } from "../components/views/UserManagementView";
 import { ProfileView } from "../components/views/ProfileView";
 import { NotificationsView } from "../components/views/NotificationsView";
 import { AuditLogsView } from "../components/views/AuditLogsView";
-import { canAccessTab } from "../lib/rbac";
+import { canAccessTab, hasPermission } from "../lib/rbac";
 import { FacilityDetailModal } from "../components/facilities/FacilityDetailModal";
 import { ReservationModal } from "../components/reservations/ReservationModal";
 import { AdminApprovalModal } from "../components/reservations/AdminApprovalModal";
@@ -37,6 +37,8 @@ function MainAppShell() {
     facilities,
     openBookingModal,
     currentUser,
+    dataError,
+    clearDataError,
   } = useApp();
 
   if (isAuthLoading) {
@@ -94,6 +96,21 @@ function MainAppShell() {
           tabIndex={-1}
           className="flex-1 max-w-7xl 2xl:max-w-[1600px] w-full mx-auto px-3.5 sm:px-6 lg:px-8 2xl:px-12 pt-4 sm:pt-6 lg:pt-8 pb-24 md:pb-8 focus:outline-none"
         >
+          {dataError && (
+            <div
+              role="alert"
+              className="mb-4 flex items-center justify-between gap-3 rounded-xl border border-rose-300 bg-rose-50 px-4 py-3 text-xs font-medium text-rose-800 dark:border-rose-800 dark:bg-rose-950/50 dark:text-rose-200"
+            >
+              <span>{dataError}</span>
+              <button
+                type="button"
+                onClick={clearDataError}
+                className="shrink-0 font-semibold underline hover:no-underline"
+              >
+                Dismiss
+              </button>
+            </div>
+          )}
           {activeTab === "dashboard" && <DashboardView />}
           {activeTab === "facilities" && <FacilitiesView />}
           {activeTab === "calendar" && <CalendarView />}
@@ -119,7 +136,7 @@ function MainAppShell() {
         }}
       />
 
-      <ReservationModal />
+      {hasPermission(currentUser.role, "RESERVATION_CREATE") && <ReservationModal />}
 
       <AdminApprovalModal />
     </div>

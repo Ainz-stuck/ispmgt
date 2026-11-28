@@ -189,6 +189,11 @@ export function AuditLogsView() {
           <div className="flex items-center gap-2 text-xs font-semibold text-zinc-700 dark:text-zinc-300">
             <ClipboardText size={16} weight="bold" className="text-[#0F5132]" />
             <span>Recorded Activity ({filteredLogs.length})</span>
+            {approvalLogs.length >= 200 && (
+              <span className="text-[11px] font-normal text-zinc-500">
+                (showing latest 200)
+              </span>
+            )}
           </div>
         </CardHeader>
         <CardBody className="p-0">

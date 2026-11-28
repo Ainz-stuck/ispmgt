@@ -2,7 +2,7 @@
 
 import React, { useState } from "react";
 import { useApp } from "../../context/AppContext";
-import { getLocalYMD } from "../../lib/utils";
+import { computeLeadDays, getLocalYMD } from "../../lib/utils";
 import { Card, CardHeader, CardBody } from "../ui/Card";
 import { Button } from "../ui/Button";
 import {
@@ -59,13 +59,7 @@ export function ReportsView() {
 
   const avgLeadDays = (() => {
     const diffs = periodReservations
-      .map((r) => {
-        if (!r.date || !r.submittedAt) return null;
-        const eventMs = new Date(`${r.date}T00:00:00`).getTime();
-        const createdMs = new Date(r.submittedAt).getTime();
-        if (!Number.isFinite(eventMs) || !Number.isFinite(createdMs)) return null;
-        return Math.max(0, (eventMs - createdMs) / 86_400_000);
-      })
+      .map((r) => computeLeadDays(r.date, r.submittedAt))
       .filter((v): v is number => v !== null);
     if (diffs.length === 0) return "0.0";
     return (diffs.reduce((sum, v) => sum + v, 0) / diffs.length).toFixed(1);

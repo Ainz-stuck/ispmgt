@@ -2,8 +2,9 @@
 
 import React, { useState, useMemo } from "react";
 import { useApp } from "../../context/AppContext";
+import { hasPermission } from "../../lib/rbac";
 import { FacilityId, FacilityScheduleEntry, Reservation } from "../../types";
-import { getLocalYMD, slotOverlapsHour } from "../../lib/utils";
+import { getLocalYMD, getPeakVenue, slotOverlapsHour } from "../../lib/utils";
 import { StatusBadge } from "../ui/Badge";
 import { Button } from "../ui/Button";
 import { Card, CardHeader, CardBody } from "../ui/Card";
@@ -115,12 +116,15 @@ type CalendarSlot = FacilityScheduleEntry & {
 
 export function CalendarView() {
   const {
+    currentUser,
     facilities,
     reservations,
     scheduleSlots,
     openBookingModal,
     setSelectedReservationForReview,
   } = useApp();
+
+  const canBook = hasPermission(currentUser.role, "RESERVATION_CREATE");
 
   // Navigation State initialized to today's local date
   const [currentYear, setCurrentYear] = useState<number>(() => new Date().getFullYear());
@@ -234,15 +238,7 @@ export function CalendarView() {
     const totalHours = Math.round((totalMinutes / 60) * 10) / 10;
     const confirmedCount = filteredReservations.filter((r) => r.status === "APPROVED").length;
     const pendingCount = filteredReservations.filter((r) => r.status === "PENDING").length;
-
-    let peakVenue = "Function Hall";
-    let peakMinutes = 0;
-    Object.entries(venueUsage).forEach(([venue, mins]) => {
-      if (mins > peakMinutes) {
-        peakMinutes = mins;
-        peakVenue = venue;
-      }
-    });
+    const peakVenue = getPeakVenue(venueUsage);
 
     return {
       totalHours,
@@ -440,14 +436,16 @@ export function CalendarView() {
               Print / Export
             </Button>
 
-            <Button
-              size="sm"
-              onClick={() => openBookingModal()}
-              icon={<PlusCircle size={16} weight="bold" />}
-              className="min-h-[42px] px-4 bg-[#0F5132] hover:bg-[#0A3622] text-white"
-            >
-              Book Venue
-            </Button>
+            {canBook && (
+              <Button
+                size="sm"
+                onClick={() => openBookingModal()}
+                icon={<PlusCircle size={16} weight="bold" />}
+                className="min-h-[42px] px-4 bg-[#0F5132] hover:bg-[#0A3622] text-white"
+              >
+                Book Venue
+              </Button>
+            )}
           </div>
         </div>
 
@@ -723,15 +721,17 @@ export function CalendarView() {
                   No reservations are currently scheduled on {selectedDate}.
                 </p>
               </div>
-              <Button
-                size="sm"
-                fullWidth
-                onClick={() => openBookingModal(undefined, selectedDate, "09:00")}
-                icon={<PlusCircle size={16} weight="bold" />}
-                className="min-h-[44px]"
-              >
-                Reserve on this Date
-              </Button>
+              {canBook && (
+                <Button
+                  size="sm"
+                  fullWidth
+                  onClick={() => openBookingModal(undefined, selectedDate, "09:00")}
+                  icon={<PlusCircle size={16} weight="bold" />}
+                  className="min-h-[44px]"
+                >
+                  Reserve on this Date
+                </Button>
+              )}
             </div>
           ) : (
             <div className="space-y-3">
@@ -952,14 +952,16 @@ export function CalendarView() {
                   {selectedDateEvents.length === 0 ? (
                     <div className="p-8 text-center text-xs text-zinc-500 space-y-2">
                       <p>All facilities are completely open and available on this date.</p>
-                      <Button
-                        size="sm"
-                        variant="primary"
-                        onClick={() => openBookingModal(undefined, selectedDate, "09:00")}
-                        className="mt-2 min-h-[40px] bg-[#0F5132] text-white"
-                      >
-                        Reserve on {selectedDate}
-                      </Button>
+                      {canBook && (
+                        <Button
+                          size="sm"
+                          variant="primary"
+                          onClick={() => openBookingModal(undefined, selectedDate, "09:00")}
+                          className="mt-2 min-h-[40px] bg-[#0F5132] text-white"
+                        >
+                          Reserve on {selectedDate}
+                        </Button>
+                      )}
                     </div>
                   ) : (
                     selectedDateEvents.map((res) => {
@@ -1039,7 +1041,7 @@ export function CalendarView() {
                 </span>
               </div>
               <span className="text-xs text-zinc-400">
-                Click any free slot to instantly reserve venue
+                {canBook ? "Click any free slot to instantly reserve venue" : "Click any scheduled event to review details"}
               </span>
             </CardHeader>
 
@@ -1098,7 +1100,7 @@ export function CalendarView() {
                                 {eventInHour.facilityName} · {eventInHour.startTime} - {eventInHour.endTime}
                               </div>
                             </div>
-                          ) : (
+                          ) : canBook ? (
                             <button
                               type="button"
                               onClick={() => {
@@ -1113,6 +1115,10 @@ export function CalendarView() {
                               <span>Available</span>
                               <span className="text-[11px] font-semibold text-[#0F5132] dark:text-emerald-400">+ Book</span>
                             </button>
+                          ) : (
+                            <div className="w-full py-2 px-3 rounded-xl border border-dashed border-zinc-200 dark:border-zinc-800 text-xs text-zinc-400 min-h-[44px] flex items-center">
+                              Open
+                            </div>
                           )}
                         </div>
                       </div>
@@ -1206,6 +1212,15 @@ export function CalendarView() {
                             );
                           }
 
+                          if (!canBook) {
+                            return (
+                              <div
+                                key={`${d.dateStr}-${hour}`}
+                                className="p-1.5 border-r border-zinc-100 dark:border-zinc-800/60"
+                              />
+                            );
+                          }
+
                           // Empty slot: Click to book
                           const targetFacility =
                             selectedFacilityFilter !== "ALL"
@@ -1260,7 +1275,7 @@ export function CalendarView() {
                 </span>
               </div>
               <div className="text-xs text-zinc-400">
-                Click any open green interval to book venue directly
+                {canBook ? "Click any open green interval to book venue directly" : "Click any occupied event to inspect details"}
               </div>
             </CardHeader>
 
@@ -1352,6 +1367,15 @@ export function CalendarView() {
                                   </div>
                                 )}
                               </div>
+                            );
+                          }
+
+                          if (!canBook) {
+                            return (
+                              <div
+                                key={`${fac.id}-${hour}`}
+                                className="p-2 border-r border-zinc-100 dark:border-zinc-800/60"
+                              />
                             );
                           }
 

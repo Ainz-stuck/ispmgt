@@ -99,3 +99,84 @@ export function slotOverlapsHour(startTime: string, endTime: string, hourInt: nu
   const slotEnd = (hourInt + 1) * 60;
   return startMins < slotEnd && endMins > slotStart;
 }
+
+export function checkTimeConflict(
+  existing: {
+    date: string;
+    startTime: string;
+    endTime: string;
+    status: string;
+    facilityId: string;
+    id: string;
+  },
+  facilityId: string,
+  date: string,
+  startTime: string,
+  endTime: string,
+  excludeReservationId?: string
+): boolean {
+  if (existing.id === excludeReservationId) return false;
+  if (existing.facilityId !== facilityId) return false;
+  if (existing.date !== date) return false;
+  if (existing.status === "REJECTED" || existing.status === "CANCELLED") return false;
+
+  const toMinutes = (time: string) => {
+    const [h, m] = time.split(":").map(Number);
+    return (Number.isFinite(h) ? h : 0) * 60 + (Number.isFinite(m) ? m : 0);
+  };
+
+  return toMinutes(startTime) < toMinutes(existing.endTime) && toMinutes(endTime) > toMinutes(existing.startTime);
+}
+
+export function getPeakVenue(venueUsage: Record<string, number>): string {
+  let peakVenue = "None";
+  let peakMinutes = 0;
+  for (const [venue, mins] of Object.entries(venueUsage)) {
+    if (mins > peakMinutes) {
+      peakMinutes = mins;
+      peakVenue = venue;
+    }
+  }
+  return peakVenue;
+}
+
+export function getErrorMessage(err: unknown, fallback: string): string {
+  if (err instanceof Error && err.message) return err.message;
+  if (
+    typeof err === "object" &&
+    err !== null &&
+    "message" in err &&
+    typeof (err as { message?: unknown }).message === "string" &&
+    (err as { message: string }).message
+  ) {
+    return (err as { message: string }).message;
+  }
+  return fallback;
+}
+
+export function getUpcomingFacilitySlots<
+  T extends { facilityId: string; date: string; startTime: string; status: string },
+>(slots: T[], facilityId: string, todayYMD: string = getLocalYMD()): T[] {
+  return slots
+    .filter(
+      (r) =>
+        r.facilityId === facilityId &&
+        r.status !== "CANCELLED" &&
+        r.status !== "REJECTED" &&
+        r.date >= todayYMD
+    )
+    .sort((a, b) => a.date.localeCompare(b.date) || a.startTime.localeCompare(b.startTime));
+}
+
+export function computeLeadDays(eventDate: string, submittedAt: string): number | null {
+  if (!eventDate || !submittedAt) return null;
+  const eventMs = new Date(`${eventDate}T00:00:00`).getTime();
+  // Bare "YYYY-MM-DD HH:MM" strings come from Postgres UTC TIMESTAMPTZ slices.
+  const normalizedSubmitted =
+    submittedAt.includes("T") || submittedAt.endsWith("Z")
+      ? submittedAt
+      : `${submittedAt.replace(" ", "T")}Z`;
+  const createdMs = new Date(normalizedSubmitted).getTime();
+  if (!Number.isFinite(eventMs) || !Number.isFinite(createdMs)) return null;
+  return Math.max(0, (eventMs - createdMs) / 86_400_000);
+}

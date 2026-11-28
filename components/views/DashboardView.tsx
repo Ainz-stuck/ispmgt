@@ -40,6 +40,7 @@ export function DashboardView() {
   const isStudent = role === "STUDENT";
   const isFaculty = role === "FACULTY";
   const isAdmin = hasPermission(role, "RESERVATION_APPROVE");
+  const canBook = hasPermission(role, "RESERVATION_CREATE");
 
   // Metrics
   const availableCount = facilities.filter((f) => f.status === "AVAILABLE").length;
@@ -116,15 +117,17 @@ export function DashboardView() {
             </p>
 
             <div className="pt-2 flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5 sm:gap-3">
-              <Button
-                size="md"
-                pill
-                onClick={() => openBookingModal()}
-                trailingIcon={<PlusCircle size={17} weight="bold" />}
-                className="bg-emerald-600 hover:bg-emerald-500 text-white border-none shadow-xl px-5 sm:px-6 min-h-[44px] w-full sm:w-auto"
-              >
-                {isAdmin ? "Create Institutional Booking" : "Start New Reservation"}
-              </Button>
+              {canBook && (
+                <Button
+                  size="md"
+                  pill
+                  onClick={() => openBookingModal()}
+                  trailingIcon={<PlusCircle size={17} weight="bold" />}
+                  className="bg-emerald-600 hover:bg-emerald-500 text-white border-none shadow-xl px-5 sm:px-6 min-h-[44px] w-full sm:w-auto"
+                >
+                  Start New Reservation
+                </Button>
+              )}
               <Button
                 variant="secondary"
                 size="md"
@@ -303,6 +306,7 @@ export function DashboardView() {
               facility={facility}
               onViewDetails={() => setSelectedFacilityId(facility.id)}
               onReserve={() => openBookingModal(facility.id)}
+              canReserve={canBook}
             />
           ))}
         </div>

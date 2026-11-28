@@ -7,8 +7,10 @@ import { Modal } from "../ui/Modal";
 import { StatusBadge } from "../ui/Badge";
 import { Button } from "../ui/Button";
 import { useApp } from "../../context/AppContext";
+import { hasPermission } from "../../lib/rbac";
 import {
   ALLOWED_FACILITY_IMAGE_MIME,
+  getUpcomingFacilitySlots,
   MAX_FACILITY_IMAGE_BYTES,
   safeFacilityImageSrc,
   validateFacilityImageUrl,
@@ -91,12 +93,10 @@ export function FacilityDetailModal({
   if (!facility) return null;
 
   const isAdmin = currentUser.role === "ADMINISTRATOR";
+  const canReserve = hasPermission(currentUser.role, "RESERVATION_CREATE");
 
-  // Filter campus schedule slots for this facility
-  const upcomingReservations = scheduleSlots
-    .filter((r) => r.facilityId === facility.id && r.status !== "CANCELLED")
-    .sort((a, b) => a.date.localeCompare(b.date))
-    .slice(0, 4);
+  // Filter campus schedule slots for upcoming active bookings at this facility
+  const upcomingReservations = getUpcomingFacilitySlots(scheduleSlots, facility.id).slice(0, 4);
 
   // File upload reader for custom photo (bounded PNG/JPEG/WebP <= 1 MB)
   const handleImageFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -331,23 +331,25 @@ export function FacilityDetailModal({
                 >
                   Close
                 </Button>
-                <Button
-                  variant="primary"
-                  size="sm"
-                  disabled={facility.status !== "AVAILABLE"}
-                  onClick={() => {
-                    onClose();
-                    onReserve(facility);
-                  }}
-                  icon={<ArrowRight size={14} weight="bold" />}
-                  className="flex-1 sm:flex-none min-h-[44px]"
-                >
-                  {facility.status === "AVAILABLE"
-                    ? "Reserve Facility"
-                    : facility.status === "MAINTENANCE"
-                    ? "Under Maintenance"
-                    : "Currently Occupied"}
-                </Button>
+                {canReserve && (
+                  <Button
+                    variant="primary"
+                    size="sm"
+                    disabled={facility.status !== "AVAILABLE"}
+                    onClick={() => {
+                      onClose();
+                      onReserve(facility);
+                    }}
+                    icon={<ArrowRight size={14} weight="bold" />}
+                    className="flex-1 sm:flex-none min-h-[44px]"
+                  >
+                    {facility.status === "AVAILABLE"
+                      ? "Reserve Facility"
+                      : facility.status === "MAINTENANCE"
+                      ? "Under Maintenance"
+                      : "Currently Occupied"}
+                  </Button>
+                )}
               </>
             )}
           </div>

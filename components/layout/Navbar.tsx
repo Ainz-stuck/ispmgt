@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from "react";
 import { useApp, NavTab } from "../../context/AppContext";
-import { canAccessTab } from "../../lib/rbac";
+import { canAccessTab, hasPermission } from "../../lib/rbac";
 import { getInitials } from "../../lib/utils";
 import {
   Buildings,
@@ -44,6 +44,7 @@ export function Navbar({ isTabletCollapsed = true, onToggleTabletCollapse }: Nav
   } = useApp();
 
   const availableVenuesCount = facilities.filter((f) => f.status === "AVAILABLE").length;
+  const canBook = hasPermission(currentUser.role, "RESERVATION_CREATE");
 
   const [isMobileDrawerOpen, setIsMobileDrawerOpen] = useState(false);
   const [isNotifOpen, setIsNotifOpen] = useState(false);
@@ -171,21 +172,23 @@ export function Navbar({ isTabletCollapsed = true, onToggleTabletCollapse }: Nav
         </div>
 
         {/* Quick Booking CTA Button (Full width on Desktop / Icon on Collapsed Tablet) */}
-        <div className="p-3 border-b border-zinc-100 dark:border-zinc-800/80 shrink-0">
-          <button
-            onClick={() => openBookingModal()}
-            className={`w-full flex items-center justify-center gap-2 py-2.5 px-3 rounded-full bg-[#0F5132] hover:bg-[#0A3622] text-white text-xs font-semibold shadow-sm transition-all active:scale-[0.98] ${
-              isTabletCollapsed ? "md:p-2.5 md:rounded-xl xl:rounded-full xl:py-2.5 xl:px-3" : ""
-            }`}
-            title="Start New Facility Reservation"
-            aria-label="Start New Facility Reservation"
-          >
-            <PlusCircle size={18} weight="bold" className="shrink-0" />
-            <span className={isTabletCollapsed ? "md:hidden xl:inline" : "inline"}>
-              Reserve Venue
-            </span>
-          </button>
-        </div>
+        {canBook && (
+          <div className="p-3 border-b border-zinc-100 dark:border-zinc-800/80 shrink-0">
+            <button
+              onClick={() => openBookingModal()}
+              className={`w-full flex items-center justify-center gap-2 py-2.5 px-3 rounded-full bg-[#0F5132] hover:bg-[#0A3622] text-white text-xs font-semibold shadow-sm transition-all active:scale-[0.98] ${
+                isTabletCollapsed ? "md:p-2.5 md:rounded-xl xl:rounded-full xl:py-2.5 xl:px-3" : ""
+              }`}
+              title="Start New Facility Reservation"
+              aria-label="Start New Facility Reservation"
+            >
+              <PlusCircle size={18} weight="bold" className="shrink-0" />
+              <span className={isTabletCollapsed ? "md:hidden xl:inline" : "inline"}>
+                Reserve Venue
+              </span>
+            </button>
+          </div>
+        )}
 
         {/* Navigation Items List */}
         <nav aria-label="Main Navigation" className="flex-1 overflow-y-auto px-3 py-4 space-y-1.5 no-scrollbar">
@@ -518,18 +521,20 @@ export function Navbar({ isTabletCollapsed = true, onToggleTabletCollapse }: Nav
             </div>
 
             {/* Quick Booking CTA in Mobile Drawer */}
-            <div className="p-4 border-b border-zinc-100 dark:border-zinc-800">
-              <button
-                onClick={() => {
-                  setIsMobileDrawerOpen(false);
-                  openBookingModal();
-                }}
-                className="w-full min-h-[48px] flex items-center justify-center gap-2 rounded-xl bg-[#0F5132] text-white font-semibold text-sm shadow-md active:scale-[0.98] transition-transform"
-              >
-                <PlusCircle size={20} weight="bold" />
-                <span>Reserve Venue Now</span>
-              </button>
-            </div>
+            {canBook && (
+              <div className="p-4 border-b border-zinc-100 dark:border-zinc-800">
+                <button
+                  onClick={() => {
+                    setIsMobileDrawerOpen(false);
+                    openBookingModal();
+                  }}
+                  className="w-full min-h-[48px] flex items-center justify-center gap-2 rounded-xl bg-[#0F5132] text-white font-semibold text-sm shadow-md active:scale-[0.98] transition-transform"
+                >
+                  <PlusCircle size={20} weight="bold" />
+                  <span>Reserve Venue Now</span>
+                </button>
+              </div>
+            )}
 
             {/* Navigation Links in Mobile Drawer */}
             <nav aria-label="Mobile Navigation" className="flex-1 overflow-y-auto p-3 space-y-1.5 no-scrollbar">
@@ -623,18 +628,20 @@ export function Navbar({ isTabletCollapsed = true, onToggleTabletCollapse }: Nav
             <span className="text-[10px] mt-0.5 tracking-tight font-medium">Venues</span>
           </button>
 
-          {/* 3. Center Elevated CTA: Reserve Venue */}
-          <button
-            type="button"
-            onClick={() => openBookingModal()}
-            className="flex flex-col items-center justify-center -mt-5 mx-0.5 group focus:outline-none"
-            aria-label="Reserve Venue"
-          >
-            <div className="w-12 h-12 rounded-full bg-[#0F5132] group-hover:bg-[#0A3622] text-white flex items-center justify-center shadow-lg ring-4 ring-white dark:ring-zinc-950 active:scale-95 transition-all">
-              <PlusCircle size={26} weight="bold" />
-            </div>
-            <span className="text-[10px] font-bold text-[#0F5132] dark:text-emerald-400 mt-0.5">Book</span>
-          </button>
+          {/* 3. Center Elevated CTA: Reserve Venue (Student / Faculty only) */}
+          {canBook && (
+            <button
+              type="button"
+              onClick={() => openBookingModal()}
+              className="flex flex-col items-center justify-center -mt-5 mx-0.5 group focus:outline-none"
+              aria-label="Reserve Venue"
+            >
+              <div className="w-12 h-12 rounded-full bg-[#0F5132] group-hover:bg-[#0A3622] text-white flex items-center justify-center shadow-lg ring-4 ring-white dark:ring-zinc-950 active:scale-95 transition-all">
+                <PlusCircle size={26} weight="bold" />
+              </div>
+              <span className="text-[10px] font-bold text-[#0F5132] dark:text-emerald-400 mt-0.5">Book</span>
+            </button>
+          )}
 
           {/* 4. Calendar */}
           <button

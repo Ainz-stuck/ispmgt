@@ -26,16 +26,27 @@ if (!supabaseUrl || !anonKey) {
   process.exit(1);
 }
 
+const studentEmail = process.env.TEST_STUDENT_EMAIL;
+const studentPassword = process.env.TEST_STUDENT_PASSWORD;
+const adminEmail = process.env.TEST_ADMIN_EMAIL;
+const adminPassword = process.env.TEST_ADMIN_PASSWORD;
+
+if (!studentEmail || !studentPassword || !adminEmail || !adminPassword) {
+  console.error(
+    "Missing TEST_STUDENT_EMAIL, TEST_STUDENT_PASSWORD, TEST_ADMIN_EMAIL, or TEST_ADMIN_PASSWORD."
+  );
+  process.exit(1);
+}
+
 const client = createClient(supabaseUrl, anonKey);
 
 async function testIntegration() {
   console.log("=== Testing Supabase Client Integration ===");
 
-  // 1. Facilities query (publicly viewable by authenticated users, or anon check)
-  console.log("1. Signing in as Student (Alex Vance)...");
+  console.log(`1. Signing in as Student (${studentEmail})...`);
   const { data: authData, error: authError } = await client.auth.signInWithPassword({
-    email: "alex.vance@university.edu",
-    password: "password123",
+    email: studentEmail,
+    password: studentPassword,
   });
 
   if (authError) {
@@ -43,7 +54,7 @@ async function testIntegration() {
   }
   console.log(`✓ Signed in successfully as user ${authData.user.id}`);
 
-  // 2. Fetch Alex's profile
+  // 2. Fetch profile
   console.log("2. Fetching profile from 'profiles' table...");
   const { data: profile, error: profError } = await client
     .from("profiles")
@@ -70,16 +81,16 @@ async function testIntegration() {
     .select("reservation_code, event_name, status, date");
 
   if (resError) throw new Error(`Reservations query failed: ${resError.message}`);
-  console.log(`✓ Loaded ${reservations.length} reservations for Alex Vance (student view restricted to own):`);
+  console.log(`✓ Loaded ${reservations.length} reservations for ${profile.name} (student view restricted to own):`);
   for (const r of reservations) {
     console.log(`   - ${r.reservation_code}: ${r.event_name} [${r.status}] on ${r.date}`);
   }
 
   // 5. Test Admin login & RLS visibility
-  console.log("5. Signing in as Admin (CHMSU Facility Administrator)...");
+  console.log(`5. Signing in as Admin (${adminEmail})...`);
   const { data: adminAuth, error: adminAuthError } = await client.auth.signInWithPassword({
-    email: "admin@chmsu.edu.ph",
-    password: "ChmsuAdmin#2026",
+    email: adminEmail,
+    password: adminPassword,
   });
   if (adminAuthError) throw new Error(`Admin auth failed: ${adminAuthError.message}`);
 

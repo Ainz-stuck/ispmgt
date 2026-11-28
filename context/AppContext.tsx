@@ -12,7 +12,6 @@ import {
   Reservation,
   ApprovalLog,
   SystemNotification,
-  ResourceCondition,
   AuthView,
   NavTab,
 } from "../types";
@@ -22,9 +21,9 @@ import {
   canAccessTab,
   hasPermission,
   isValidNavTab,
-  ROLE_SHORT_LABELS,
   validateReservationLeadTime,
 } from "../lib/rbac";
+import { getErrorMessage } from "../lib/utils";
 
 export type { NavTab };
 
@@ -72,7 +71,6 @@ interface AppContextType {
     facilityId: FacilityId,
     status: FacilityStatus
   ) => Promise<ActionResult>;
-  updateFacilityCapacity: (facilityId: FacilityId, capacity: number) => Promise<ActionResult>;
   updateFacilityDetails: (
     facilityId: FacilityId,
     data: Partial<Facility>
@@ -86,11 +84,6 @@ interface AppContextType {
     data: Partial<Omit<ResourceItem, "id">>
   ) => Promise<ActionResult>;
   deleteResource: (resourceId: string) => Promise<ActionResult>;
-  updateResourceCondition: (
-    resourceId: string,
-    condition: ResourceCondition
-  ) => Promise<ActionResult>;
-  updateResourceQuantity: (resourceId: string, total: number) => Promise<ActionResult>;
 
   // Reservations & Campus Schedule
   reservations: Reservation[];
@@ -165,6 +158,8 @@ interface AppContextType {
   setSelectedReservationForReview: (res: Reservation | null) => void;
 
   // Helpers
+  dataError: string | null;
+  clearDataError: () => void;
   checkConflict: (
     facilityId: FacilityId,
     date: string,
@@ -187,6 +182,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [scheduleSlots, setScheduleSlots] = useState<FacilityScheduleEntry[]>([]);
   const [approvalLogs, setApprovalLogs] = useState<ApprovalLog[]>([]);
   const [notifications, setNotifications] = useState<SystemNotification[]>([]);
+  const [dataError, setDataError] = useState<string | null>(null);
+  const clearDataError = useCallback(() => setDataError(null), []);
 
   // UI State with URL ?tab= synchronization
   const [activeTab, setActiveTabState] = useState<NavTab>(() => {
@@ -280,6 +277,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   // Fetch all data from Supabase
   const loadAppData = useCallback(async () => {
+    setDataError(null);
     try {
       const facs = await db.fetchFacilities();
       setFacilities(facs);
@@ -310,6 +308,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       }
     } catch (err) {
       console.error("Error loading app data from Supabase:", err);
+      setDataError(getErrorMessage(err, "Failed to load campus data from database. Please refresh."));
     }
   }, [auth.isAuthenticated, auth.currentUser]);
 
@@ -369,8 +368,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         prev.map((u) => (u.id === currentUser.id ? { ...u, ...data } : u))
       );
       return { success: true };
-    } catch (err: any) {
-      return { success: false, error: err?.message || "Failed to update profile." };
+    } catch (err) {
+      return { success: false, error: getErrorMessage(err, "Failed to update profile.") };
     }
   };
 
@@ -385,28 +384,20 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     }
 
     try {
-      const nextStatus = await db.toggleUserStatus(userId, target.status);
+      const { nextStatus, log: newLog } = await db.toggleUserStatus(
+        userId,
+        target.status,
+        target,
+        currentUser
+      );
 
       setAllUsers((prev) =>
         prev.map((u) => (u.id === userId ? { ...u, status: nextStatus } : u))
       );
-
-      const newLog = await db.insertApprovalLog({
-        reservationId: `user-${userId}`,
-        reservationCode: target.studentOrEmployeeId,
-        eventName: "User Access State Modified",
-        facilityName: "Security & Role Access",
-        actorName: currentUser.name,
-        actorRole: currentUser.role,
-        action: "USER_STATUS_CHANGE",
-        timestamp: new Date().toISOString(),
-        notes: `User ${target.name} (${target.email}) account status changed to ${nextStatus}.`,
-      });
-
       setApprovalLogs((l) => [newLog, ...l]);
       return { success: true };
-    } catch (err: any) {
-      return { success: false, error: err?.message || "Failed to toggle user status." };
+    } catch (err) {
+      return { success: false, error: getErrorMessage(err, "Failed to toggle user status.") };
     }
   };
 
@@ -422,37 +413,15 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     if (target.role === role) return { success: true };
 
     try {
-      await db.updateUserRole(userId, role);
+      const { log: newLog } = await db.updateUserRole(userId, role, target, currentUser);
 
       setAllUsers((prev) =>
         prev.map((u) => (u.id === userId ? { ...u, role } : u))
       );
-
-      const newLog = await db.insertApprovalLog({
-        reservationId: `user-${userId}`,
-        reservationCode: target.studentOrEmployeeId,
-        eventName: "User Role Assignment Changed",
-        facilityName: "Security & Role Access",
-        actorName: currentUser.name,
-        actorRole: currentUser.role,
-        action: "USER_ROLE_CHANGE",
-        timestamp: new Date().toISOString(),
-        notes: `User ${target.name} (${target.email}) role updated from ${ROLE_SHORT_LABELS[target.role]} to ${ROLE_SHORT_LABELS[role]}.`,
-      });
       setApprovalLogs((l) => [newLog, ...l]);
-
-      await db.insertNotification({
-        userId,
-        title: "Institutional Role Updated",
-        message: `Your UniSpace access role was updated to ${ROLE_SHORT_LABELS[role]} by ${currentUser.name}.`,
-        type: "ACCOUNT_SECURITY",
-        timestamp: new Date().toISOString(),
-        read: false,
-      }).catch(() => {});
-
       return { success: true };
-    } catch (err: any) {
-      return { success: false, error: err?.message || "Failed to update user role." };
+    } catch (err) {
+      return { success: false, error: getErrorMessage(err, "Failed to update user role.") };
     }
   };
 
@@ -464,47 +433,16 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     if (!hasPermission(currentUser.role, "FACILITY_MANAGE")) {
       return { success: false, error: "Forbidden: Administrator privileges required." };
     }
+    const facility = facilities.find((f) => f.id === facilityId);
     try {
-      await db.updateFacilityStatus(facilityId, status);
+      const newLog = await db.updateFacilityStatus(facilityId, status, facility, currentUser);
       setFacilities((prev) =>
         prev.map((f) => (f.id === facilityId ? { ...f, status } : f))
       );
-
-      const facility = facilities.find((f) => f.id === facilityId);
-      const newLog = await db.insertApprovalLog({
-        reservationId: `facility-${facilityId}`,
-        reservationCode: facility?.code || facilityId,
-        eventName: "Facility Status Modification",
-        facilityName: facility?.name || facilityId,
-        actorName: currentUser.name,
-        actorRole: currentUser.role,
-        action: "MAINTENANCE_TOGGLE",
-        timestamp: new Date().toISOString(),
-        notes: `Status changed to ${status} by administrator.`,
-      });
-
       setApprovalLogs((prev) => [newLog, ...prev]);
       return { success: true };
-    } catch (err: any) {
-      return { success: false, error: err?.message || "Failed to update facility status." };
-    }
-  };
-
-  const updateFacilityCapacity = async (
-    facilityId: FacilityId,
-    capacity: number
-  ): Promise<ActionResult> => {
-    if (!hasPermission(currentUser.role, "FACILITY_MANAGE")) {
-      return { success: false, error: "Forbidden: Administrator privileges required." };
-    }
-    try {
-      await db.updateFacilityCapacity(facilityId, capacity);
-      setFacilities((prev) =>
-        prev.map((f) => (f.id === facilityId ? { ...f, capacity } : f))
-      );
-      return { success: true };
-    } catch (err: any) {
-      return { success: false, error: err?.message || "Failed to update capacity." };
+    } catch (err) {
+      return { success: false, error: getErrorMessage(err, "Failed to update facility status.") };
     }
   };
 
@@ -515,42 +453,23 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     if (!hasPermission(currentUser.role, "FACILITY_MANAGE")) {
       return { success: false, error: "Forbidden: Administrator privileges required." };
     }
+    const facility = facilities.find((f) => f.id === facilityId);
     try {
-      await db.updateFacilityDetails(facilityId, data);
+      const { log: newLog, notification: newNotif } = await db.updateFacilityDetails(
+        facilityId,
+        data,
+        facility,
+        currentUser
+      );
       setFacilities((prev) =>
         prev.map((f) => (f.id === facilityId ? { ...f, ...data } : f))
       );
-
-      const facility = facilities.find((f) => f.id === facilityId);
-      const newLog = await db.insertApprovalLog({
-        reservationId: `facility-${facilityId}`,
-        reservationCode: data.code || facility?.code || facilityId,
-        eventName: "Facility Specification Updated",
-        facilityName: data.name || facility?.name || facilityId,
-        actorName: currentUser.name,
-        actorRole: currentUser.role,
-        action: "FACILITY_DETAILS_UPDATE",
-        timestamp: new Date().toISOString(),
-        notes: `Facility specifications and media updated by administrator ${currentUser.name}.`,
-      });
       setApprovalLogs((prev) => [newLog, ...prev]);
-
-      const newNotif = await db.insertNotification({
-        userId: null,
-        targetRole: "ALL",
-        title: "Facility Details Updated",
-        message: `Specifications for ${
-          data.name || facility?.name || facilityId
-        } were updated by ${currentUser.name}.`,
-        timestamp: new Date().toISOString(),
-        read: false,
-        type: "FACILITY_UPDATE",
-      });
       setNotifications((prev) => [newNotif, ...prev]);
 
       return { success: true };
-    } catch (err: any) {
-      return { success: false, error: err?.message || "Failed to update facility details." };
+    } catch (err) {
+      return { success: false, error: getErrorMessage(err, "Failed to update facility details.") };
     }
   };
 
@@ -568,7 +487,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       );
 
       const newLog = await db.insertApprovalLog({
-        reservationId: created.id,
+        reservationId: `resource-${created.id}`,
         reservationCode: created.category,
         eventName: `Equipment Added: ${created.name}`,
         facilityName:
@@ -584,8 +503,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       setApprovalLogs((prev) => [newLog, ...prev]);
 
       return { success: true };
-    } catch (err: any) {
-      return { success: false, error: err?.message || "Failed to add equipment item." };
+    } catch (err) {
+      return { success: false, error: getErrorMessage(err, "Failed to add equipment item.") };
     }
   };
 
@@ -618,8 +537,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           .sort((a, b) => a.name.localeCompare(b.name))
       );
       return { success: true };
-    } catch (err: any) {
-      return { success: false, error: err?.message || "Failed to update equipment details." };
+    } catch (err) {
+      return { success: false, error: getErrorMessage(err, "Failed to update equipment details.") };
     }
   };
 
@@ -629,71 +548,15 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     }
     const target = resources.find((r) => r.id === resourceId);
     try {
-      await db.deleteResource(resourceId);
+      const newLog = await db.deleteResource(resourceId, target, currentUser);
       setResources((prev) => prev.filter((r) => r.id !== resourceId));
-
-      if (target) {
-        const newLog = await db.insertApprovalLog({
-          reservationId: resourceId,
-          reservationCode: target.category,
-          eventName: `Equipment Deleted: ${target.name}`,
-          facilityName: "Campus-Wide Warehouse",
-          actorName: currentUser.name,
-          actorRole: currentUser.role,
-          action: "RESOURCE_DELETED",
-          timestamp: new Date().toISOString(),
-          notes: `Removed ${target.name} from active inventory catalog.`,
-        });
+      if (newLog) {
         setApprovalLogs((prev) => [newLog, ...prev]);
       }
 
       return { success: true };
-    } catch (err: any) {
-      return { success: false, error: err?.message || "Failed to delete equipment item." };
-    }
-  };
-
-  const updateResourceCondition = async (
-    resourceId: string,
-    condition: ResourceCondition
-  ): Promise<ActionResult> => {
-    if (!hasPermission(currentUser.role, "RESOURCE_MANAGE")) {
-      return { success: false, error: "Forbidden: Administrator privileges required." };
-    }
-    try {
-      await db.updateResourceCondition(resourceId, condition);
-      setResources((prev) =>
-        prev.map((r) => (r.id === resourceId ? { ...r, condition } : r))
-      );
-      return { success: true };
-    } catch (err: any) {
-      return { success: false, error: err?.message || "Failed to update condition." };
-    }
-  };
-
-  const updateResourceQuantity = async (
-    resourceId: string,
-    totalQuantity: number
-  ): Promise<ActionResult> => {
-    if (!hasPermission(currentUser.role, "RESOURCE_MANAGE")) {
-      return { success: false, error: "Forbidden: Administrator privileges required." };
-    }
-    try {
-      await db.updateResourceQuantity(resourceId, totalQuantity);
-      setResources((prev) =>
-        prev.map((r) =>
-          r.id === resourceId
-            ? {
-                ...r,
-                totalQuantity,
-                availableQuantity: Math.min(r.availableQuantity, totalQuantity),
-              }
-            : r
-        )
-      );
-      return { success: true };
-    } catch (err: any) {
-      return { success: false, error: err?.message || "Failed to update quantity." };
+    } catch (err) {
+      return { success: false, error: getErrorMessage(err, "Failed to delete equipment item.") };
     }
   };
 
@@ -735,6 +598,12 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       | "department"
     >
   ) => {
+    if (!hasPermission(currentUser.role, "RESERVATION_CREATE")) {
+      return {
+        success: false,
+        error: "Forbidden: Administrators oversee bookings and cannot submit reservations.",
+      };
+    }
     try {
       const leadCheck = validateReservationLeadTime(currentUser.role, data.date);
       if (!leadCheck.valid) {
@@ -753,21 +622,22 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       if (res.reservation) {
         setReservations((prev) => [res.reservation!, ...prev]);
       }
+      if (res.log) {
+        setApprovalLogs((prev) => [res.log!, ...prev]);
+      }
 
-      const [slots, logs, notifs] = await Promise.all([
+      const [slots, notifs] = await Promise.all([
         db.fetchFacilitySchedule(),
-        db.fetchApprovalLogs(),
         db.fetchNotifications(currentUser.id, currentUser.role),
       ]);
       setScheduleSlots(slots);
-      setApprovalLogs(logs);
       setNotifications(notifs);
 
       return { success: true, reservationCode: res.reservationCode };
-    } catch (err: any) {
+    } catch (err) {
       return {
         success: false,
-        error: err?.message || "Failed to submit reservation request.",
+        error: getErrorMessage(err, "Failed to submit reservation request."),
       };
     }
   };
@@ -797,7 +667,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         };
       }
 
-      await db.approveReservationRecord(target, currentUser, notes);
+      const newLog = await db.approveReservationRecord(target, currentUser, notes);
 
       setReservations((prev) =>
         prev.map((r) =>
@@ -812,23 +682,24 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
             : r
         )
       );
+      setApprovalLogs((prev) => [newLog, ...prev]);
 
-      const [slots, logs, notifs, freshResources] = await Promise.all([
+      const [slots, notifs, freshResources] = await Promise.all([
         db.fetchFacilitySchedule(),
-        db.fetchApprovalLogs(),
-        db.fetchNotifications(currentUser.id, currentUser.role),
+        target.userId === currentUser.id
+          ? db.fetchNotifications(currentUser.id, currentUser.role)
+          : Promise.resolve(null),
         target.resources.length > 0 ? db.fetchResources() : Promise.resolve(null),
       ]);
       setScheduleSlots(slots);
-      setApprovalLogs(logs);
-      setNotifications(notifs);
+      if (notifs) setNotifications(notifs);
       if (freshResources) setResources(freshResources);
 
       return { success: true };
-    } catch (err: any) {
+    } catch (err) {
       return {
         success: false,
-        error: err?.message || "Failed to approve reservation.",
+        error: getErrorMessage(err, "Failed to approve reservation."),
       };
     }
   };
@@ -844,7 +715,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     if (!target) return { success: false, error: "Reservation not found." };
 
     try {
-      await db.rejectReservationRecord(target, currentUser, reason);
+      const newLog = await db.rejectReservationRecord(target, currentUser, reason);
 
       setReservations((prev) =>
         prev.map((r) =>
@@ -859,21 +730,22 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
             : r
         )
       );
+      setApprovalLogs((prev) => [newLog, ...prev]);
 
-      const [slots, logs, notifs] = await Promise.all([
+      const [slots, notifs] = await Promise.all([
         db.fetchFacilitySchedule(),
-        db.fetchApprovalLogs(),
-        db.fetchNotifications(currentUser.id, currentUser.role),
+        target.userId === currentUser.id
+          ? db.fetchNotifications(currentUser.id, currentUser.role)
+          : Promise.resolve(null),
       ]);
       setScheduleSlots(slots);
-      setApprovalLogs(logs);
-      setNotifications(notifs);
+      if (notifs) setNotifications(notifs);
 
       return { success: true };
-    } catch (err: any) {
+    } catch (err) {
       return {
         success: false,
-        error: err?.message || "Failed to reject reservation.",
+        error: getErrorMessage(err, "Failed to reject reservation."),
       };
     }
   };
@@ -887,10 +759,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       const slots = await db.fetchFacilitySchedule();
       setScheduleSlots(slots);
       return { success: true };
-    } catch (err: any) {
+    } catch (err) {
       return {
         success: false,
-        error: err?.message || "Failed to cancel reservation.",
+        error: getErrorMessage(err, "Failed to cancel reservation."),
       };
     }
   };
@@ -946,19 +818,18 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           prev.map((r) => (r.id === reservationId ? res.reservation! : r))
         );
       }
+      if (res.log) {
+        setApprovalLogs((prev) => [res.log!, ...prev]);
+      }
 
-      const [slots, logs] = await Promise.all([
-        db.fetchFacilitySchedule(),
-        db.fetchApprovalLogs(),
-      ]);
+      const slots = await db.fetchFacilitySchedule();
       setScheduleSlots(slots);
-      setApprovalLogs(logs);
 
       return { success: true, reservationCode: target.reservationCode };
-    } catch (err: any) {
+    } catch (err) {
       return {
         success: false,
-        error: err?.message || "Failed to update reservation request.",
+        error: getErrorMessage(err, "Failed to update reservation request."),
       };
     }
   };
@@ -982,39 +853,24 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     }
 
     try {
-      await db.deleteReservationRecord(reservationId, target);
+      const newLog = await db.deleteReservationRecord(reservationId, target, currentUser);
       setReservations((prev) => prev.filter((r) => r.id !== reservationId));
       setScheduleSlots((prev) => prev.filter((s) => s.id !== reservationId));
       if (selectedReservationForReview?.id === reservationId) {
         setSelectedReservationForReview(null);
       }
+      if (newLog) setApprovalLogs((prev) => [newLog, ...prev]);
 
       if (target.status === "APPROVED" && target.resources.length > 0) {
-        db.fetchResources().then(setResources).catch(() => {});
-      }
-
-      if (isAdmin) {
-        const newLog = await db
-          .insertApprovalLog({
-            reservationId,
-            reservationCode: target.reservationCode,
-            eventName: target.eventName,
-            facilityName: target.facilityName,
-            actorName: currentUser.name,
-            actorRole: currentUser.role,
-            action: "RESERVATION_DELETED",
-            timestamp: new Date().toISOString(),
-            notes: `Reservation ${target.reservationCode} (${target.status}) deleted by administrator.`,
-          })
-          .catch(() => null);
-        if (newLog) setApprovalLogs((prev) => [newLog, ...prev]);
+        const freshResources = await db.fetchResources();
+        setResources(freshResources);
       }
 
       return { success: true };
-    } catch (err: any) {
+    } catch (err) {
       return {
         success: false,
-        error: err?.message || "Failed to delete reservation.",
+        error: getErrorMessage(err, "Failed to delete reservation."),
       };
     }
   };
@@ -1057,8 +913,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       await db.deleteNotificationRecord(target, currentUser.id);
       setNotifications((prev) => prev.filter((n) => n.id !== id));
       return { success: true };
-    } catch (err: any) {
-      return { success: false, error: err?.message || "Failed to delete notification." };
+    } catch (err) {
+      return { success: false, error: getErrorMessage(err, "Failed to delete notification.") };
     }
   };
 
@@ -1073,8 +929,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       await db.clearReadNotifications(currentUser.id, readItems);
       setNotifications((prev) => prev.filter((n) => !n.read));
       return { success: true };
-    } catch (err: any) {
-      return { success: false, error: err?.message || "Failed to clear notifications." };
+    } catch (err) {
+      return { success: false, error: getErrorMessage(err, "Failed to clear notifications.") };
     }
   };
 
@@ -1083,6 +939,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   }, [notifications]);
 
   const openBookingModal = (facilityId?: FacilityId, date?: string, time?: string) => {
+    if (!hasPermission(currentUser.role, "RESERVATION_CREATE")) return;
     setEditingReservation(null);
     setPreselectedFacilityId(facilityId || null);
     setPreselectedDate(date || null);
@@ -1125,14 +982,11 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         updateUserRole,
         facilities,
         updateFacilityStatus,
-        updateFacilityCapacity,
         updateFacilityDetails,
         resources,
         createResource,
         updateResource,
         deleteResource,
-        updateResourceCondition,
-        updateResourceQuantity,
         reservations,
         scheduleSlots,
         createReservation,
@@ -1162,6 +1016,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         closeBookingModal,
         selectedReservationForReview,
         setSelectedReservationForReview,
+        dataError,
+        clearDataError,
         checkConflict,
       }}
     >

@@ -15,13 +15,15 @@ import {
 interface FacilityCardProps {
   facility: Facility;
   onViewDetails: (facility: Facility) => void;
-  onReserve: (facility: Facility) => void;
+  onReserve?: (facility: Facility) => void;
+  canReserve?: boolean;
 }
 
 export function FacilityCard({
   facility,
   onViewDetails,
   onReserve,
+  canReserve = true,
 }: FacilityCardProps) {
   const isAvailable = facility.status === "AVAILABLE";
 
@@ -113,21 +115,23 @@ export function FacilityCard({
             >
               Specs & Rules
             </Button>
-            <Button
-              variant="primary"
-              size="sm"
-              pill
-              disabled={!isAvailable}
-              onClick={() => onReserve(facility)}
-              className="flex-1 text-xs min-h-[44px]"
-              trailingIcon={<ArrowRight size={12} weight="bold" />}
-            >
-              {isAvailable
-                ? "Reserve"
-                : facility.status === "MAINTENANCE"
-                ? "Under Maintenance"
-                : "Occupied"}
-            </Button>
+            {canReserve && onReserve && (
+              <Button
+                variant="primary"
+                size="sm"
+                pill
+                disabled={!isAvailable}
+                onClick={() => onReserve(facility)}
+                className="flex-1 text-xs min-h-[44px]"
+                trailingIcon={<ArrowRight size={12} weight="bold" />}
+              >
+                {isAvailable
+                  ? "Reserve"
+                  : facility.status === "MAINTENANCE"
+                  ? "Under Maintenance"
+                  : "Occupied"}
+              </Button>
+            )}
           </div>
         </div>
       </div>

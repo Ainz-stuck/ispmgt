@@ -1,36 +1,33 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# UniSpace — CHMSU Facility & Equipment Reservation Portal
 
-## Getting Started
+Campus venue scheduling, equipment allocation, and role-based approval workflow for Carlos Hilado Memorial State University (CHMSU), built with Next.js 16 and Supabase.
 
-First, run the development server:
+## Setup
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
-```
+1. Install dependencies:
+   ```bash
+   npm install
+   ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+2. Create `.env.local` in the project root:
+   ```env
+   NEXT_PUBLIC_SUPABASE_URL=<your-supabase-project-url>
+   NEXT_PUBLIC_SUPABASE_ANON_KEY=<your-supabase-anon-key>
+   SUPABASE_SERVICE_ROLE_KEY=<optional-for-seeding-and-security-audit>
+   ```
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+3. Apply [`supabase_schema.sql`](./supabase_schema.sql) in the Supabase Dashboard SQL Editor to create/update tables, RLS policies, triggers, and atomic transaction RPCs (`create_reservation_tx`, `approve_reservation_tx`, `update_reservation_tx`, `delete_reservation_tx`).
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+4. Optional: seed baseline facilities, resources, and demo accounts:
+   ```bash
+   node scripts/seed.mjs
+   ```
 
-## Learn More
+## Scripts
 
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+- `npm run dev` — Start local development server
+- `npm run build` — Production build
+- `npm test` — Run unit & regression tests (`tests/*.test.mjs`)
+- `npm run lint` — Run ESLint
+- `npx tsc --noEmit` — Type-check TypeScript sources
+- `npm run audit:security` — Verify live Supabase RLS, triggers, and schema readiness

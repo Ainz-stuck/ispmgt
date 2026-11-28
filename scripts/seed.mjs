@@ -331,14 +331,20 @@ const INITIAL_RESOURCES = [
 async function seed() {
   console.log("Starting Supabase database seeding...");
 
-  // 1. Create or retrieve users in auth
+  // 1. Create or retrieve users in auth (listUsers fetched once before loop)
   const userIdMap = {};
+  const { data: listData, error: listErr } = await supabase.auth.admin.listUsers({
+    page: 1,
+    perPage: 1000,
+  });
+  if (listErr) throw listErr;
+  const authUsersByEmail = new Map(
+    (listData?.users || []).map((u) => [u.email?.toLowerCase(), u])
+  );
 
   for (const user of MOCK_USERS) {
     console.log(`Setting up user: ${user.email} (${user.role})...`);
-    // Check if user already exists
-    const { data: listData } = await supabase.auth.admin.listUsers();
-    let authUser = listData.users.find((u) => u.email === user.email);
+    let authUser = authUsersByEmail.get(user.email.toLowerCase());
 
     if (!authUser) {
       const { data: created, error } = await supabase.auth.admin.createUser({

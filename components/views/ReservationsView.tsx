@@ -41,6 +41,7 @@ export function ReservationsView() {
   const [reservationToDelete, setReservationToDelete] = useState<Reservation | null>(null);
 
   const isAdmin = hasPermission(currentUser.role, "RESERVATION_APPROVE");
+  const canBook = hasPermission(currentUser.role, "RESERVATION_CREATE");
   const canViewAll = hasPermission(currentUser.role, "RESERVATION_VIEW_ALL");
 
   const canDeleteReservation = (res: Reservation) => {
@@ -134,13 +135,15 @@ export function ReservationsView() {
           </p>
         </div>
 
-        <Button
-          onClick={() => openBookingModal()}
-          icon={<PlusCircle size={16} weight="bold" />}
-          className="min-h-[44px] w-full sm:w-auto"
-        >
-          New Booking Request
-        </Button>
+        {canBook && (
+          <Button
+            onClick={() => openBookingModal()}
+            icon={<PlusCircle size={16} weight="bold" />}
+            className="min-h-[44px] w-full sm:w-auto"
+          >
+            New Booking Request
+          </Button>
+        )}
       </div>
 
       {actionError && (

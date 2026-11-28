@@ -1,5 +1,4 @@
-import { NavTab, UserRole } from "../types";
-import { getLocalYMD } from "./utils";
+import type { NavTab, UserRole } from "../types";
 
 export type Permission =
   | "FACILITY_BROWSE"
@@ -48,10 +47,8 @@ export const ROLE_PERMISSIONS: Record<UserRole, ReadonlySet<Permission>> = {
     "FACILITY_MANAGE",
     "RESOURCE_BROWSE",
     "RESOURCE_MANAGE",
-    "RESERVATION_CREATE",
     "RESERVATION_VIEW_ALL",
     "RESERVATION_APPROVE",
-    "RESERVATION_BYPASS_LEAD_TIME",
     "REPORTS_VIEW",
     "USERS_MANAGE",
     "AUDIT_LOGS_VIEW",
@@ -91,6 +88,9 @@ export function hasPermission(role: UserRole | undefined, permission: Permission
 
 export function canAccessTab(role: UserRole | undefined, tab: NavTab): boolean {
   if (!role) return false;
+  if (tab === "reservations") {
+    return hasPermission(role, "RESERVATION_CREATE") || hasPermission(role, "RESERVATION_VIEW_ALL");
+  }
   const required = TAB_PERMISSIONS[tab];
   if (!required) return true;
   return hasPermission(role, required);
@@ -112,7 +112,10 @@ export function getMinReservationDate(role: UserRole | undefined, baseDate: Date
   if (!hasPermission(role, "RESERVATION_BYPASS_LEAD_TIME")) {
     d.setDate(d.getDate() + STUDENT_MIN_LEAD_DAYS);
   }
-  return getLocalYMD(d);
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
 }
 
 export function validateReservationLeadTime(

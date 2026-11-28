@@ -2,16 +2,20 @@
 
 import React, { useState } from "react";
 import { useApp } from "../../context/AppContext";
+import { hasPermission } from "../../lib/rbac";
 import { FacilityCard } from "../facilities/FacilityCard";
 import { Button } from "../ui/Button";
 import { MagnifyingGlass, PlusCircle } from "@phosphor-icons/react";
 
 export function FacilitiesView() {
   const {
+    currentUser,
     facilities,
     setSelectedFacilityId,
     openBookingModal,
   } = useApp();
+
+  const canBook = hasPermission(currentUser.role, "RESERVATION_CREATE");
 
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("ALL");
@@ -48,13 +52,15 @@ export function FacilitiesView() {
           </p>
         </div>
 
-        <Button
-          onClick={() => openBookingModal()}
-          icon={<PlusCircle size={16} weight="bold" />}
-          className="shrink-0 min-h-[44px] w-full sm:w-auto"
-        >
-          Book a Venue
-        </Button>
+        {canBook && (
+          <Button
+            onClick={() => openBookingModal()}
+            icon={<PlusCircle size={16} weight="bold" />}
+            className="shrink-0 min-h-[44px] w-full sm:w-auto"
+          >
+            Book a Venue
+          </Button>
+        )}
       </div>
 
       {/* Filter Toolbar */}
@@ -130,6 +136,7 @@ export function FacilitiesView() {
               facility={facility}
               onViewDetails={() => setSelectedFacilityId(facility.id)}
               onReserve={() => openBookingModal(facility.id)}
+              canReserve={canBook}
             />
           ))}
         </div>

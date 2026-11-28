@@ -4,7 +4,7 @@ import React, { useState, useEffect } from "react";
 import Image from "next/image";
 import { useApp } from "../../context/AppContext";
 import { Facility, FacilityScheduleEntry, RequestedResource } from "../../types";
-import { safeFacilityImageSrc } from "../../lib/utils";
+import { getErrorMessage, safeFacilityImageSrc } from "../../lib/utils";
 import {
   getMinReservationDate,
   hasPermission,
@@ -306,8 +306,8 @@ export function ReservationModal() {
       } else {
         setFormError(result.error || "Unable to save reservation request. Please try again.");
       }
-    } catch (err: any) {
-      setFormError(err?.message || "An unexpected error occurred while submitting.");
+    } catch (err) {
+      setFormError(getErrorMessage(err, "An unexpected error occurred while submitting."));
     } finally {
       setIsSubmitting(false);
     }

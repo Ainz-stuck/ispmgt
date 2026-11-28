@@ -4,8 +4,9 @@ import React, { createContext, useContext, useEffect, useState, useCallback, use
 import { supabase, createEphemeralSupabaseClient } from "../lib/supabase";
 import { fetchProfile, insertNotification } from "../lib/supabase-data";
 import { isInstitutionalRegistrationEmail, ROLE_LABELS } from "../lib/rbac";
+import { getErrorMessage } from "../lib/utils";
 import { User, UserRole, AuthView } from "../types";
-import type { Session, User as SupabaseUser } from "@supabase/supabase-js";
+import type { AuthChangeEvent, Session, User as SupabaseUser } from "@supabase/supabase-js";
 
 export interface RegisterPayload {
   firstName: string;
@@ -61,6 +62,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [authNotice, setAuthNotice] = useState<string | null>(null);
   const [authView, setAuthViewState] = useState<AuthView>("landing");
   const isExplicitLoginRef = useRef(false);
+  const hasLoadedProfileRef = useRef(false);
 
   const setAuthView = useCallback((view: AuthView, replace = false) => {
     setAuthViewState(view);
@@ -85,22 +87,38 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const loadUserProfile = useCallback(async (userId: string) => {
     try {
       const profile = await fetchProfile(userId);
-      if (profile) {
-        if (profile.status === "DEACTIVATED") {
-          await supabase.auth.signOut();
-          setCurrentUser(null);
-          setIsAuthenticated(false);
-          setAuthNotice("Account suspended. Please contact the Facility Administrator.");
-          setAuthView("login");
-          return;
-        }
-        setAuthNotice(null);
-        setCurrentUser(profile);
-        setIsAuthenticated(true);
-        setAuthView("app");
+      if (!profile) {
+        await supabase.auth.signOut();
+        hasLoadedProfileRef.current = false;
+        setCurrentUser(null);
+        setIsAuthenticated(false);
+        setAuthNotice("Unable to load your account profile. Please sign in again.");
+        setAuthView("login");
+        return;
       }
+      if (profile.status === "DEACTIVATED") {
+        await supabase.auth.signOut();
+        hasLoadedProfileRef.current = false;
+        setCurrentUser(null);
+        setIsAuthenticated(false);
+        setAuthNotice("Account suspended. Please contact the Facility Administrator.");
+        setAuthView("login");
+        return;
+      }
+      hasLoadedProfileRef.current = true;
+      setAuthNotice(null);
+      setCurrentUser(profile);
+      setIsAuthenticated(true);
+      setAuthView("app");
     } catch (err) {
       console.error("Failed to load user profile:", err);
+      // Keep the existing session and token intact on transient network errors.
+      setAuthNotice("Temporary network error verifying your profile. Please refresh the page to retry.");
+      if (!hasLoadedProfileRef.current) {
+        setCurrentUser(null);
+        setIsAuthenticated(false);
+        setAuthView("login");
+      }
     }
   }, [setAuthView]);
 
@@ -114,7 +132,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     let recoveryMode = false;
 
     // 1. Initial session check
-    supabase.auth.getSession().then((res: any) => {
+    supabase.auth.getSession().then((res) => {
       const activeSession = res?.data?.session;
       setSession(activeSession);
       setSupabaseUser(activeSession?.user ?? null);
@@ -158,7 +176,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     // 2. Auth state change listener
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange(async (event: string, activeSession: any) => {
+    } = supabase.auth.onAuthStateChange(async (event: AuthChangeEvent, activeSession: Session | null) => {
       setSession(activeSession);
       setSupabaseUser(activeSession?.user ?? null);
 
@@ -183,6 +201,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }
         await loadUserProfile(activeSession.user.id);
       } else {
+        hasLoadedProfileRef.current = false;
         setCurrentUser(null);
         setIsAuthenticated(false);
       }
@@ -230,10 +249,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         };
       }
 
+      hasLoadedProfileRef.current = true;
       setCurrentUser(profile);
       setIsAuthenticated(true);
       setAuthView("app");
       return { success: true, role: profile.role };
+    } catch (err) {
+      return {
+        success: false,
+        error: getErrorMessage(err, "Unable to sign in. Please try again."),
+      };
     } finally {
       isExplicitLoginRef.current = false;
     }
@@ -261,56 +286,67 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     // Standard Student / Faculty & Staff signup (role enforced in DB trigger)
     const targetRole = payload.role === "FACULTY" ? "FACULTY" : "STUDENT";
 
-    const { data, error } = await supabase.auth.signUp({
-      email: normalizedEmail,
-      password: payload.password,
-      options: {
-        emailRedirectTo:
-          typeof window !== "undefined" ? `${window.location.origin}/` : undefined,
-        data: {
-          name: `${payload.firstName} ${payload.lastName}`.trim(),
-          first_name: payload.firstName.trim(),
-          last_name: payload.lastName.trim(),
-          contact_number: payload.contactNumber.trim(),
-          department: payload.department,
-          role: targetRole,
-          student_or_employee_id: cleanId,
+    isExplicitLoginRef.current = true;
+    try {
+      const { data, error } = await supabase.auth.signUp({
+        email: normalizedEmail,
+        password: payload.password,
+        options: {
+          emailRedirectTo:
+            typeof window !== "undefined" ? `${window.location.origin}/` : undefined,
+          data: {
+            name: `${payload.firstName} ${payload.lastName}`.trim(),
+            first_name: payload.firstName.trim(),
+            last_name: payload.lastName.trim(),
+            contact_number: payload.contactNumber.trim(),
+            department: payload.department,
+            role: targetRole,
+            student_or_employee_id: cleanId,
+          },
         },
-      },
-    });
+      });
 
-    if (error) {
-      return { success: false, error: error.message };
-    }
-
-    if (data.user && !data.session) {
-      setAuthNotice(
-        "Registration received. Please check your @chmsu.edu.ph email to confirm your account before signing in."
-      );
-      setAuthView("login");
-      return { success: true };
-    }
-
-    if (data.user) {
-      await new Promise((resolve) => setTimeout(resolve, 600));
-      const profile = await fetchProfile(data.user.id);
-      if (profile) {
-        setCurrentUser(profile);
-        setIsAuthenticated(true);
-        setAuthView("app");
+      if (error) {
+        return { success: false, error: error.message };
       }
 
-      await insertNotification({
-        userId: data.user.id,
-        title: "Welcome to UniSpace",
-        message: `Your account as ${ROLE_LABELS[targetRole]} is verified and active.`,
-        type: "ACCOUNT_SECURITY",
-        timestamp: new Date().toISOString(),
-        read: false,
-      }).catch(() => {});
-    }
+      if (data.user && !data.session) {
+        setAuthNotice(
+          "Registration received. Please check your @chmsu.edu.ph email to confirm your account before signing in."
+        );
+        setAuthView("login");
+        return { success: true };
+      }
 
-    return { success: true };
+      if (data.user) {
+        await new Promise((resolve) => setTimeout(resolve, 600));
+        const profile = await fetchProfile(data.user.id);
+        if (profile) {
+          hasLoadedProfileRef.current = true;
+          setCurrentUser(profile);
+          setIsAuthenticated(true);
+          setAuthView("app");
+        }
+
+        await insertNotification({
+          userId: data.user.id,
+          title: "Welcome to UniSpace",
+          message: `Your account as ${ROLE_LABELS[targetRole]} is verified and active.`,
+          type: "ACCOUNT_SECURITY",
+          timestamp: new Date().toISOString(),
+          read: false,
+        }).catch(() => {});
+      }
+
+      return { success: true };
+    } catch (err) {
+      return {
+        success: false,
+        error: getErrorMessage(err, "Registration succeeded, but loading your profile failed. Please sign in."),
+      };
+    } finally {
+      isExplicitLoginRef.current = false;
+    }
   };
 
   const resetPassword = async (email: string) => {
@@ -379,6 +415,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const logout = async () => {
     setIsPasswordRecovery(false);
+    hasLoadedProfileRef.current = false;
     await supabase.auth.signOut();
     setCurrentUser(null);
     setIsAuthenticated(false);

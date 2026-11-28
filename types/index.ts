@@ -16,13 +16,8 @@ export interface User {
   createdAt?: string;
 }
 
-export type FacilityId =
-  | "function-hall"
-  | "dining-hall"
-  | "gym"
-  | "dance-hall"
-  | "avr"
-  | "rooftop-engineering";
+// Open string matching public.facilities(id) TEXT so DB-added venues work without a rebuild.
+export type FacilityId = string;
 
 export type FacilityStatus = "AVAILABLE" | "MAINTENANCE" | "BOOKED";
 
