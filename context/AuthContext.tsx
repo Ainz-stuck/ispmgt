@@ -4,7 +4,7 @@ import React, { createContext, useContext, useEffect, useState, useCallback, use
 import { supabase, createEphemeralSupabaseClient } from "../lib/supabase";
 import { fetchProfile, insertNotification } from "../lib/supabase-data";
 import { isInstitutionalRegistrationEmail, ROLE_LABELS } from "../lib/rbac";
-import { getErrorMessage } from "../lib/utils";
+import { getErrorMessage, resolveProfileLoadOutcome } from "../lib/utils";
 import { User, UserRole, AuthView } from "../types";
 import type { AuthChangeEvent, Session, User as SupabaseUser } from "@supabase/supabase-js";
 
@@ -86,41 +86,46 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const clearAuthNotice = useCallback(() => setAuthNotice(null), []);
 
   const loadUserProfile = useCallback(async (userId: string) => {
+    let outcome: ReturnType<typeof resolveProfileLoadOutcome<User>>;
     try {
       const profile = await fetchProfile(userId);
-      if (!profile) {
-        await supabase.auth.signOut();
-        hasLoadedProfileRef.current = false;
-        setCurrentUser(null);
-        setIsAuthenticated(false);
-        setAuthNotice("Unable to load your account profile. Please sign in again.");
-        setAuthView("login");
-        return;
-      }
-      if (profile.status === "DEACTIVATED") {
-        await supabase.auth.signOut();
-        hasLoadedProfileRef.current = false;
-        setCurrentUser(null);
-        setIsAuthenticated(false);
-        setAuthNotice("Account suspended. Please contact the Facility Administrator.");
-        setAuthView("login");
-        return;
-      }
-      hasLoadedProfileRef.current = true;
-      setAuthNotice(null);
-      setCurrentUser(profile);
-      setIsAuthenticated(true);
-      setAuthView("app");
+      outcome = resolveProfileLoadOutcome({
+        profile,
+        hasLoadedProfile: hasLoadedProfileRef.current,
+      });
     } catch (err) {
       console.error("Failed to load user profile:", err);
-      // Keep the existing session and token intact on transient network errors.
-      setAuthNotice("Temporary network error verifying your profile. Please refresh the page to retry.");
-      if (!hasLoadedProfileRef.current) {
+      outcome = resolveProfileLoadOutcome<User>({
+        error: err,
+        hasLoadedProfile: hasLoadedProfileRef.current,
+      });
+    }
+
+    if (outcome.action === "SIGN_OUT") {
+      await supabase.auth.signOut();
+      hasLoadedProfileRef.current = false;
+      setCurrentUser(null);
+      setIsAuthenticated(false);
+      setAuthNotice(outcome.notice);
+      setAuthView("login");
+      return;
+    }
+
+    if (outcome.action === "KEEP_TOKEN") {
+      setAuthNotice(outcome.notice);
+      if (outcome.clearAuth) {
         setCurrentUser(null);
         setIsAuthenticated(false);
         setAuthView("login");
       }
+      return;
     }
+
+    hasLoadedProfileRef.current = true;
+    setAuthNotice(null);
+    setCurrentUser(outcome.profile);
+    setIsAuthenticated(true);
+    setAuthView("app");
   }, [setAuthView]);
 
   const refreshCurrentUser = useCallback(async () => {

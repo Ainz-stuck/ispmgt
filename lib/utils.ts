@@ -180,3 +180,50 @@ export function computeLeadDays(eventDate: string, submittedAt: string): number 
   if (!Number.isFinite(eventMs) || !Number.isFinite(createdMs)) return null;
   return Math.max(0, (eventMs - createdMs) / 86_400_000);
 }
+
+export async function collectPagedRows<T>(
+  fetchPage: (from: number, to: number) => Promise<{ data: T[] | null; count: number | null }>,
+  pageSize: number = 1000
+): Promise<T[]> {
+  const allRows: T[] = [];
+  for (let from = 0; ; ) {
+    const { data, count } = await fetchPage(from, from + pageSize - 1);
+    const rows = data || [];
+    allRows.push(...rows);
+    from += rows.length;
+    if (rows.length === 0 || (count !== null ? allRows.length >= count : rows.length < pageSize)) {
+      break;
+    }
+  }
+  return allRows;
+}
+
+export function resolveProfileLoadOutcome<T extends { status: string }>(params: {
+  profile?: T | null;
+  error?: unknown;
+  hasLoadedProfile: boolean;
+}):
+  | { action: "AUTHENTICATE"; profile: T }
+  | { action: "SIGN_OUT"; notice: string }
+  | { action: "KEEP_TOKEN"; clearAuth: boolean; notice: string } {
+  if (params.error !== undefined) {
+    return {
+      action: "KEEP_TOKEN",
+      clearAuth: !params.hasLoadedProfile,
+      notice: "Temporary network error verifying your profile. Please refresh the page to retry.",
+    };
+  }
+  if (!params.profile) {
+    return {
+      action: "SIGN_OUT",
+      notice: "Unable to load your account profile. Please sign in again.",
+    };
+  }
+  if (params.profile.status === "DEACTIVATED") {
+    return {
+      action: "SIGN_OUT",
+      notice: "Account suspended. Please contact the Facility Administrator.",
+    };
+  }
+  return { action: "AUTHENTICATE", profile: params.profile };
+}

@@ -11,12 +11,14 @@ import {
 } from "../lib/rbac.ts";
 import {
   checkTimeConflict,
+  collectPagedRows,
   computeLeadDays,
   escapeCsvCell,
   getErrorMessage,
   getPeakVenue,
   getUpcomingFacilitySlots,
   MAX_FACILITY_IMAGE_BYTES,
+  resolveProfileLoadOutcome,
   safeFacilityImageSrc,
   slotOverlapsHour,
   validateFacilityImageUrl,
@@ -155,4 +157,51 @@ test("getCampusDateYMD uses Asia/Manila date across UTC day rollovers", () => {
   // 2026-11-28T20:00:00Z is already 2026-11-29 04:00 in Asia/Manila (UTC+8).
   assert.equal(getCampusDateYMD(new Date("2026-11-28T20:00:00Z")), "2026-11-29");
   assert.equal(getCampusDateYMD(new Date("2026-11-28T15:59:59Z")), "2026-11-28");
+});
+
+test("collectPagedRows continues across pages even when server caps rows below pageSize", async () => {
+  const dataset = Array.from({ length: 1200 }, (_, i) => i + 1);
+  const calls = [];
+  const rows = await collectPagedRows(async (from, to) => {
+    calls.push([from, to]);
+    const cap = Math.min(to, from + 499);
+    return { data: dataset.slice(from, cap + 1), count: dataset.length };
+  }, 1000);
+
+  assert.equal(rows.length, 1200);
+  assert.deepEqual(calls, [
+    [0, 999],
+    [500, 1499],
+    [1000, 1999],
+  ]);
+  assert.deepEqual(await collectPagedRows(async () => ({ data: [], count: 0 })), []);
+});
+
+test("resolveProfileLoadOutcome preserves tokens on network error and signs out on missing or deactivated profiles", () => {
+  const errOutcome = resolveProfileLoadOutcome({
+    error: new Error("timeout"),
+    hasLoadedProfile: true,
+  });
+  assert.equal(errOutcome.action, "KEEP_TOKEN");
+  assert.equal(errOutcome.clearAuth, false);
+
+  const coldErr = resolveProfileLoadOutcome({
+    error: new Error("timeout"),
+    hasLoadedProfile: false,
+  });
+  assert.equal(coldErr.action, "KEEP_TOKEN");
+  assert.equal(coldErr.clearAuth, true);
+
+  assert.equal(
+    resolveProfileLoadOutcome({ profile: null, hasLoadedProfile: true }).action,
+    "SIGN_OUT"
+  );
+  assert.equal(
+    resolveProfileLoadOutcome({ profile: { status: "DEACTIVATED" }, hasLoadedProfile: true }).action,
+    "SIGN_OUT"
+  );
+  assert.equal(
+    resolveProfileLoadOutcome({ profile: { status: "ACTIVE" }, hasLoadedProfile: false }).action,
+    "AUTHENTICATE"
+  );
 });

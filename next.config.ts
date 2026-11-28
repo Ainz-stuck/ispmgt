@@ -15,6 +15,16 @@ const cspHeader = [
 
 const nextConfig: NextConfig = {
   poweredByHeader: false,
+  async redirects() {
+    return [
+      {
+        source: "/:path*",
+        has: [{ type: "host", value: "ispmgt.vercel.app" }],
+        destination: "https://unispace-chmsu.vercel.app/:path*",
+        permanent: true,
+      },
+    ];
+  },
   async headers() {
     return [
       {

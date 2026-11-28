@@ -1,5 +1,5 @@
 import { supabase, type Database } from "./supabase";
-import { checkTimeConflict } from "./utils";
+import { checkTimeConflict, collectPagedRows } from "./utils";
 import {
   User,
   UserRole,
@@ -564,10 +564,7 @@ export async function fetchFacilitySchedule(): Promise<FacilityScheduleEntry[]> 
 
 export async function fetchReservations(): Promise<Reservation[]> {
   // shortcut: loads all reservations via range pagination; move ReportsView aggregation to SQL if campus exceeds ~10k rows.
-  const PAGE_SIZE = 1000;
-  const allRows: ReservationRow[] = [];
-
-  for (let from = 0; ; ) {
+  const allRows = await collectPagedRows<ReservationRow>(async (from, to) => {
     const { data, count, error } = await supabase
       .from("reservations")
       .select(
@@ -575,16 +572,11 @@ export async function fetchReservations(): Promise<Reservation[]> {
         { count: "exact" }
       )
       .order("submitted_at", { ascending: false })
-      .range(from, from + PAGE_SIZE - 1);
+      .range(from, to);
 
     if (error) throw error;
-    const rows = (data || []) as ReservationRow[];
-    allRows.push(...rows);
-    from += rows.length;
-    if (rows.length === 0 || (count !== null ? allRows.length >= count : rows.length < PAGE_SIZE)) {
-      break;
-    }
-  }
+    return { data: (data || []) as ReservationRow[], count };
+  });
 
   return allRows.map((r) => {
     const requested: RequestedResource[] = (r.requested_resources || []).map((req) => ({
